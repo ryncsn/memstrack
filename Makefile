@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -std=c11 -O3
+CFLAGS = -std=c11 -g -O0
 ANALYZER_OBJS = src/analyzer.o src/tracing.o src/utils.o
 
 all: analyzer
