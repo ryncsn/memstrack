@@ -1,8 +1,3 @@
-#include <stdio.h>
-#include <stddef.h>
-#include <string.h>
-#include <assert.h>
-#include <stdlib.h>
 #include "utils.h"
 
 struct Record {
@@ -13,6 +8,7 @@ struct Record {
 
 struct TraceNode {
 	char *callsite;
+	unsigned long long callsite_addr;
 	struct Record record;
 	struct TraceNode *tracepoints;
 
@@ -36,12 +32,16 @@ struct Event {
 };
 
 void update_record(struct Record *record, struct Event *event);
-int compTraceNode(struct TreeNode *src, struct TreeNode *root);
+int compTraceNodeResolved(struct TreeNode *src, struct TreeNode *root);
+int compTraceNodeRaw(struct TreeNode *src, struct TreeNode *root);
 
 struct TraceNode* get_tracepoint(struct TraceNode **root, char *callsite);
-struct TraceNode* insert_tracepoint(struct TraceNode **root, struct TraceNode *src, char *callsite);
+struct TraceNode* insert_tracepoint(struct TraceNode **root, struct TraceNode *src);
 struct TraceNode* get_or_new_tracepoint(struct TraceNode **root, char *callsite);
 
+struct TraceNode* get_tracepoint_raw(struct TraceNode **root, unsigned long long callsite);
+struct TraceNode* insert_tracepoint_raw(struct TraceNode **root, struct TraceNode *src);
+struct TraceNode* get_or_new_tracepoint_raw(struct TraceNode **root, unsigned long long callsite);
 
 int compTask(const void *lht, const void *rht);
 int hashTask(const void *task);
@@ -50,8 +50,5 @@ struct Task* get_task(struct HashMap *map, char* task_name, int pid);
 struct Task* insert_task(struct HashMap *map, struct Task* task);
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
 
-
-void print_tracenode(struct TreeNode* tnode);
-void print_task_tracenode(struct TreeNode* tnode);
 void print_task(struct Task* task);
 void print_all_tasks(struct HashMap *map);

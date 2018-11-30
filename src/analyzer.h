@@ -5,5 +5,3 @@
 #include <assert.h>
 #include "utils.h"
 #include "tracing.h"
-
-#define MAX_LINE 8192

@@ -49,17 +49,19 @@ struct TreeNode* insert_tree_node(
 
 void iter_tree_node(
 		struct TreeNode *root,
-		void (*handler)(struct TreeNode *node))
+		void (*handler)(struct TreeNode *node, void *blob),
+		void *blob
+		)
 {
 	if (root == NULL) {
 		return;
 	}
 	if (root->left) {
-		iter_tree_node(root->left, handler);
+		iter_tree_node(root->left, handler, blob);
 	}
-	handler(root);
+	handler(root, blob);
 	if (root->right) {
-		iter_tree_node(root->right, handler);
+		iter_tree_node(root->right, handler, blob);
 	}
 }
 

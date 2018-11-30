@@ -1,40 +1,39 @@
-#include "analyzer.h"
 #include <sys/types.h>
 #include <unistd.h>
 #include <signal.h>
-#define MAX_PATH 4096
+#include <poll.h>
+#include <string.h>
 
-const char STACK_TRACE_SIGN[] = " => ";
-const char STACK_TRACE_EVENT[] = "<stack trace>";
-const char TRACE_FILE[] = "/sys/kernel/debug/tracing/trace_pipe";
-const char TRACE_BASE[] = "/sys/kernel/debug/tracing";
-const char TRACE_EVENTS[] = "kmem:kmem_cache_alloc";
-const char TRACE_FILTER[] = "common_pid != %d";
+#include "analyzer.h"
+#include "perf.h"
+#include "ftrace.h"
+
+#define MAX_LINE 4096
 
 struct HashMap TaskMap = {
 	hashTask,
 	compTask,
-	NULL
+	{NULL},
 };
 
-FILE* trace_file = NULL;
-int lookahead;
-char line[MAX_LINE];
+char* PidMap[65535];
+
+// For perf
+int perf_events_num;
+struct PerfEvent *perf_events;
+
+// For ftrace
+FILE* ftrace_file = NULL;
+char ftrace_line[MAX_LINE];
+unsigned int lookahead;
+
+// Share analyzing db
 struct Task *current_task = NULL;
 struct Event current_event;
-
-int read_next_valid_line(char *buffer, int size) {
-	char *ret = NULL;
-	do {
-		ret = fgets(buffer, size, trace_file);
-	}
-	while (ret && ret[0] == '#');
-	if (strstr(buffer, "LOST"))
-		printf("%s", buffer);
-	return !!ret;
-}
+int debug = 1;
 
 void task_map_debug() {
+	printf("Task Bucket usage:\n");
 	for (int i = 0; i < HASH_BUCKET; i++) {
 		if (TaskMap.buckets[i] != NULL) {
 			printf("Bucket %d in use\n", i);
@@ -42,56 +41,138 @@ void task_map_debug() {
 	}
 }
 
-void set_trace(const char* value, const char* path) {
-	printf("Setting %s to %s\n", value, path);
-	char filename[MAX_PATH];
-	sprintf(filename, "%s/%s", TRACE_BASE, path);
-	FILE *file = fopen(filename, "w");
-	fprintf(file, value);
-	fclose(file);
-}
-
-void cleanup_trace() {
-	set_trace("0", "tracing_on");
-	set_trace("", "trace");
-	set_trace("", "set_event");
-	set_trace("0", "events/kmem/filter");
-	set_trace("", "trace_options");
-}
-
-void setup_trace() {
-	char buffer[MAX_PATH];
-	sprintf(buffer, TRACE_FILTER, getpid());
-	set_trace(TRACE_EVENTS, "set_event");
-	set_trace(buffer, "events/kmem/filter");
-	set_trace("4096", "saved_cmdlines_size");
-	set_trace("1", "tracing_on");
-	set_trace("", "trace");
-	set_trace("stacktrace", "trace_options");
-	set_trace("sym-offset", "trace_options");
-	set_trace("print-parent", "trace_options");
+char* get_process_name_by_pid(const int pid)
+{
+	char* name = (char*)calloc(sizeof(char), 1024);
+	if (name) {
+		sprintf(name, "/proc/%d/cmdline", pid);
+		FILE* f = fopen(name,"r");
+		if (f) {
+			size_t size;
+			size = fread(name, sizeof(char), 1024, f);
+			if (size > 0){
+				if ('\n' == name[size - 1]) {
+					name[size - 1]='\0';
+				}
+			}
+			fclose(f);
+		}
+	}
+	return name;
 }
 
 void on_exit() {
-	fclose(trace_file);
-	cleanup_trace();
-	// task_map_debug();
+	if (ftrace_file) {
+		ftrace_cleanup(&ftrace_file);
+	}
+	if (perf_events) {
+		for (int i = 0; i < perf_events_num; i++) {
+			perf_event_clean(perf_events + i);
+		}
+	}
+	if (debug) {
+		task_map_debug();
+	}
 	print_all_tasks(&TaskMap);
 	exit(0);
 }
 
 void on_signal(int signal) {
-	printf("Signal\n");
+	fprintf(stderr, "Exiting on signal %d\n", signal);
 	on_exit();
 }
 
-struct TraceNode* process_stacktrace() {
-	lookahead = !!read_next_valid_line(line, MAX_LINE);
+int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* __) {
+	perf_event->counter++;
+	return 0;
+}
+
+int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
+	perf_event->counter++;
+
+	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
+	header += sizeof(*body);
+
+	struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
+	header += sizeof(callchain->nr) + sizeof(callchain->ips) * callchain->nr;
+
+	struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
+	struct perf_raw_mm_page_alloc *raw_data = (struct perf_raw_mm_page_alloc*)(&raw->data);
+
+	char *cmdline = PidMap[body->pid];
+	if (!cmdline) {
+		cmdline = PidMap[body->pid] = get_process_name_by_pid(body->pid);
+	}
+	current_task = get_or_new_task(&TaskMap, cmdline, body->pid);
+	current_event.bytes_req = 0;
+	current_event.bytes_alloc = 0;
+	current_event.pages_alloc = 1;
+	struct TraceNode *tp = NULL;
+	for (int i = 0; i < (int)raw_data->order; ++i) {
+		current_event.pages_alloc *= 2;
+	}
+	for (int i = 1; i <= (int)callchain->nr; i++) {
+		if (i == 1) {
+			update_record(&current_task->record, &current_event);
+			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		} else {
+			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		}
+		update_record(&tp->record, &current_event);
+	}
+
+	return 0;
+}
+
+const char *PERF_EVENTS[] = {
+	"kmem:mm_page_alloc",
+	"kmem:mm_page_free",
+	"kmem:kmem_cache_alloc",
+	"kmem:kmem_cache_free",
+};
+
+SampleHandler PERF_EVENTS_HANDLERS[] = {
+	perf_handle_mm_page_alloc,
+	perf_handle_nothing,
+	perf_handle_nothing,
+	perf_handle_nothing,
+};
+
+int perf_events_init() {
+	const int cpu_num = get_perf_cpu_num();
+	const int event_num = sizeof(PERF_EVENTS) / sizeof(const char*);
+
+	perf_events_num = cpu_num * event_num;
+	perf_events = calloc(sizeof(struct PerfEvent), perf_events_num);
+
+	for (int cpu = 0; cpu < cpu_num; cpu++) {
+		for (int event = 0; event < event_num; event++){
+			perf_events[cpu + event * cpu_num].cpu = cpu;
+			perf_events[cpu + event * cpu_num].event_name = malloc(strlen(PERF_EVENTS[event]) + 1);
+			perf_events[cpu + event * cpu_num].event_id = get_perf_event_id(PERF_EVENTS[event]);
+			perf_events[cpu + event * cpu_num].sample_handler = PERF_EVENTS_HANDLERS[event];
+			strcpy(perf_events[cpu + event * cpu_num].event_name, PERF_EVENTS[event]);
+		}
+	}
+
+	for (int i = 0; i < perf_events_num; i++) {
+		perf_event_setup(perf_events + i);
+	}
+
+	return 0;
+}
+
+void ftrace_init() {
+	ftrace_setup(&ftrace_file);
+}
+
+struct TraceNode* ftrace_process_stacktrace() {
+	lookahead = !!ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file);
 	if (!lookahead) {
 		// EOF
 		return NULL;
 	}
-	if (strncmp(line, STACK_TRACE_SIGN, sizeof(STACK_TRACE_SIGN) -1) != 0) {
+	if (strncmp(ftrace_line, FTRACE_STACK_TRACE_SIGN, strlen(FTRACE_STACK_TRACE_SIGN) - 1) != 0) {
 		// Read ahead end of trace
 		return NULL;
 	}
@@ -99,14 +180,14 @@ struct TraceNode* process_stacktrace() {
 	struct TraceNode *tp = NULL;
 	char *callsite = NULL, *callsite_arg = NULL;
 	int callsite_len = 0;
-	callsite_arg = line + sizeof(STACK_TRACE_SIGN) - 1;
+	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
 	callsite_len = strlen(callsite_arg);
 	callsite = malloc(callsite_len + 1);
 	strcpy(callsite, callsite_arg);
 	callsite[callsite_len - 1] = '\0';
 
 	// Process next traceline
-	tp = process_stacktrace();
+	tp = ftrace_process_stacktrace();
 
 	if (tp == NULL) {
 		tp = get_or_new_tracepoint(&current_task->tracepoints, callsite);
@@ -120,17 +201,32 @@ struct TraceNode* process_stacktrace() {
 	return tp;
 }
 
-int main() {
-	trace_file = fopen(TRACE_FILE, "r");
-	setup_trace();
-	signal(SIGINT, on_signal);
-	while(lookahead || read_next_valid_line(line, MAX_LINE)){
+void do_process_perf() {
+	struct pollfd *perf_fds = calloc(sizeof(struct pollfd), perf_events_num);
+	for (int i = 0; i < perf_events_num; i++) {
+		perf_event_start_sampling(perf_events + i);
+	}
+
+	while (1) {
+		for (int i = 0; i < perf_events_num; i++) {
+			perf_fds[i].fd = perf_events[i].perf_fd;
+			perf_fds[i].events = POLLIN;
+		}
+		poll(perf_fds, perf_events_num, 250);
+		for (int i = 0; i < perf_events_num; i++) {
+			perf_event_process(perf_events + i);
+		}
+	}
+}
+
+void do_process_ftrace() {
+	while(lookahead || ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file)){
 		char *task_info = NULL, *event_info = NULL, *pid_arg = NULL;
 		unsigned int pid = 0;
 
 		lookahead = 0;
-		task_info = line;
-		event_info = strstr(line, ": ");
+		task_info = ftrace_line;
+		event_info = strstr(ftrace_line, ": ");
 
 		while(task_info[0] == ' ' || task_info[0] == '\t') {
 			task_info++;
@@ -152,14 +248,14 @@ int main() {
 			continue;
 		}
 
-		if (strncmp(event_info, STACK_TRACE_EVENT, sizeof(STACK_TRACE_EVENT) - 1) == 0) {
-			process_stacktrace();
+		if (strncmp(event_info, FTRACE_STACK_TRACE_EVENT, strlen(FTRACE_STACK_TRACE_EVENT) - 1) == 0) {
+			ftrace_process_stacktrace();
 		} else {
-			char *event, *callsite;
+			// char *event, *callsite;
 			unsigned long long ptr;
 
 			current_event.event = strtok(event_info, " ");
-			callsite = strtok(NULL, " ");
+			// callsite = strtok(NULL, " ");
 
 			current_task = get_or_new_task(&TaskMap, task_info, pid);
 
@@ -180,5 +276,17 @@ int main() {
 			}
 		}
 	}
-	on_exit();
+}
+
+int main() {
+	if (0) {
+		perf_events_init();
+		signal(SIGINT, on_signal);
+		do_process_perf();
+	} else {
+		ftrace_init();
+		signal(SIGINT, on_signal);
+		do_process_ftrace();
+	}
+		on_exit();
 }

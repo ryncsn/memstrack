@@ -41,7 +41,8 @@ struct TreeNode* insert_tree_node(
 
 void iter_tree_node(
 		struct TreeNode *root,
-		void (*handler)(struct TreeNode *node));
+		void (*handler)(struct TreeNode *node, void *blob),
+		void *blob);
 
 
 struct HashNode* get_hash_node(
