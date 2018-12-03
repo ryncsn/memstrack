@@ -58,12 +58,13 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 	attr.sample_type = SAMPLE_CONFIG_FLAG;
 
 	attr.disabled = 1;
-	attr.exclude_user = 1;
+	// attr.exclude_callchain_user = 1;
 	attr.config = perf_event->event_id;
+	attr.precise_ip = 2;
 
 	mmap_size = (CPU_BUFSIZE + 1) * getpagesize();
 
-	attr.wakeup_watermark = mmap_size / 2;
+	attr.wakeup_watermark = mmap_size / 4;
 	if (attr.wakeup_watermark < (__u32)getpagesize()) {
 		fprintf(stderr, "perf ring buffer too small!\n");
 	}

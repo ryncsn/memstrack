@@ -279,7 +279,7 @@ void do_process_ftrace() {
 }
 
 int main() {
-	if (0) {
+	if (1) {
 		perf_events_init();
 		signal(SIGINT, on_signal);
 		do_process_perf();
