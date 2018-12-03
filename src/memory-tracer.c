@@ -1,21 +1,29 @@
-#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <stdarg.h>
 #include <unistd.h>
 #include <signal.h>
-#include <poll.h>
 #include <string.h>
+#include <getopt.h>
+#include <errno.h>
+#include <poll.h>
+#include <sys/types.h>
 
-#include "analyzer.h"
-#include "perf.h"
+#include "memory-tracer.h"
+#include "tracing.h"
 #include "ftrace.h"
+#include "perf.h"
 
 #define MAX_LINE 4096
 
-struct HashMap TaskMap = {
-	hashTask,
-	compTask,
-	{NULL},
-};
+int memtrac_debug;
+int memtrac_human;
+int memtrac_perf;
+int memtrac_ftrace;
+int memtrac_json;
 
+char* memtrac_perf_base;
 char* PidMap[65535];
 
 // For perf
@@ -30,13 +38,28 @@ unsigned int lookahead;
 // Share analyzing db
 struct Task *current_task = NULL;
 struct Event current_event;
-int debug = 1;
+
+int memtrac_log (int level, const char *__restrict fmt, ...){
+	if (!memtrac_debug && level <= LOG_LVL_DEBUG) {
+		return 0;
+	}
+	int ret;
+	va_list args;
+	va_start (args, fmt);
+	if (level >= LOG_LVL_WARN) {
+		ret = vfprintf(stderr, fmt, args);
+	} else {
+		ret = vfprintf(stdout, fmt, args);
+	}
+	va_end (args);
+	return ret;
+}
 
 void task_map_debug() {
-	printf("Task Bucket usage:\n");
+	log_debug("Task Bucket usage:\n");
 	for (int i = 0; i < HASH_BUCKET; i++) {
 		if (TaskMap.buckets[i] != NULL) {
-			printf("Bucket %d in use\n", i);
+			log_debug("Bucket %d in use\n", i);
 		}
 	}
 }
@@ -56,7 +79,12 @@ char* get_process_name_by_pid(const int pid)
 				}
 			}
 			fclose(f);
+		} else {
+			log_error("Failed to retrive process name of %d\n", pid);
+			sprintf(name, "%d", pid);
 		}
+	} else {
+		return NULL;
 	}
 	return name;
 }
@@ -70,7 +98,7 @@ void on_exit() {
 			perf_event_clean(perf_events + i);
 		}
 	}
-	if (debug) {
+	if (memtrac_debug) {
 		task_map_debug();
 	}
 	print_all_tasks(&TaskMap);
@@ -78,12 +106,51 @@ void on_exit() {
 }
 
 void on_signal(int signal) {
-	fprintf(stderr, "Exiting on signal %d\n", signal);
+	log_warn("Exiting on signal %d\n", signal);
 	on_exit();
 }
 
 int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* __) {
 	perf_event->counter++;
+	return 0;
+}
+
+int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
+	perf_event->counter++;
+
+	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
+	header += sizeof(*body);
+
+	struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
+	header += sizeof(callchain->nr) + sizeof(callchain->ips) * callchain->nr;
+
+	struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
+	struct perf_raw_kmem_cache_alloc *raw_data = (struct perf_raw_kmem_cache_alloc*)(&raw->data);
+
+	char *cmdline = PidMap[body->pid];
+	if (!cmdline) {
+		cmdline = PidMap[body->pid] = get_process_name_by_pid(body->pid);
+	}
+	current_task = get_or_new_task(&TaskMap, cmdline, body->pid);
+	current_event.bytes_req = raw_data->bytes_req;
+	current_event.bytes_alloc = raw_data->bytes_alloc;
+	current_event.pages_alloc = 0;
+
+	struct TraceNode *tp = NULL;
+	for (int i = 1; i <= (int)callchain->nr; i++) {
+		if ( 0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
+			//FIXME
+			continue;
+		}
+		if (i == 1) {
+			update_record(&current_task->record, &current_event);
+			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		} else {
+			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		}
+		update_record(&tp->record, &current_event);
+	}
+
 	return 0;
 }
 
@@ -112,6 +179,10 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 		current_event.pages_alloc *= 2;
 	}
 	for (int i = 1; i <= (int)callchain->nr; i++) {
+		if ( 0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
+			//FIXME
+			continue;
+		}
 		if (i == 1) {
 			update_record(&current_task->record, &current_event);
 			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
@@ -133,12 +204,13 @@ const char *PERF_EVENTS[] = {
 
 SampleHandler PERF_EVENTS_HANDLERS[] = {
 	perf_handle_mm_page_alloc,
-	perf_handle_nothing,
+	perf_handle_kmem_cache_alloc,
 	perf_handle_nothing,
 	perf_handle_nothing,
 };
 
 int perf_events_init() {
+	int err = 0;
 	const int cpu_num = get_perf_cpu_num();
 	const int event_num = sizeof(PERF_EVENTS) / sizeof(const char*);
 
@@ -147,23 +219,35 @@ int perf_events_init() {
 
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
 		for (int event = 0; event < event_num; event++){
+			perf_events[cpu + event * cpu_num].event_id = get_perf_event_id(PERF_EVENTS[event]);
+			if (perf_events[cpu + event * cpu_num].event_id == -1){
+				log_error("Failed to retrive event id for \'%s\', please ensure tracefs is mounted\n", PERF_EVENTS[event]);
+				err = EINVAL;
+				break;
+			}
 			perf_events[cpu + event * cpu_num].cpu = cpu;
 			perf_events[cpu + event * cpu_num].event_name = malloc(strlen(PERF_EVENTS[event]) + 1);
-			perf_events[cpu + event * cpu_num].event_id = get_perf_event_id(PERF_EVENTS[event]);
+			if (perf_events[cpu + event * cpu_num].event_name == NULL){
+				err = ENOMEM;
+				break;
+			}
 			perf_events[cpu + event * cpu_num].sample_handler = PERF_EVENTS_HANDLERS[event];
 			strcpy(perf_events[cpu + event * cpu_num].event_name, PERF_EVENTS[event]);
 		}
 	}
 
 	for (int i = 0; i < perf_events_num; i++) {
-		perf_event_setup(perf_events + i);
+		err = perf_event_setup(perf_events + i);
+		if (err) {
+			return err;
+		}
 	}
 
 	return 0;
 }
 
-void ftrace_init() {
-	ftrace_setup(&ftrace_file);
+int ftrace_init() {
+	return ftrace_setup(&ftrace_file);
 }
 
 struct TraceNode* ftrace_process_stacktrace() {
@@ -202,9 +286,13 @@ struct TraceNode* ftrace_process_stacktrace() {
 }
 
 void do_process_perf() {
+	int err;
 	struct pollfd *perf_fds = calloc(sizeof(struct pollfd), perf_events_num);
 	for (int i = 0; i < perf_events_num; i++) {
-		perf_event_start_sampling(perf_events + i);
+		err = perf_event_start_sampling(perf_events + i);
+		if (err) {
+			log_error("Failed starting perf event sampling: %s!\n", strerror(err));
+		}
 	}
 
 	while (1) {
@@ -278,15 +366,114 @@ void do_process_ftrace() {
 	}
 }
 
-int main() {
-	if (1) {
-		perf_events_init();
+static struct option long_options[] =
+{
+	/* These options set a flag. */
+	{"ftrace",		no_argument,	&memtrac_ftrace,	1},
+	{"perf",		no_argument,	&memtrac_perf,	1},
+	// {"slab",		no_argument,	&memtrac_slab,	1},
+	// {"page",		no_argument,	&memtrac_page,	1},
+	// {"json",		no_argument,	&memtrac_json,	1},
+	{"debug",		no_argument,		0,	'd'},
+	// {"human-readable",	no_argument,		0,	'h'},
+	// {"trace-base",		required_argument,	0,	'b'},
+	// {"throttle-output",	required_argument,	0,	't'},
+	{"help",		no_argument,	&memtrac_json,	'?'},
+	{0, 0, 0, 0}
+};
+
+
+void display_usage() {
+	log_info("Usage: memory-tracer [OPTION]... \n");
+	log_info("    --debug		Print debug messages. \n");
+	log_info("    --ftrace		Use ftrace for tracing, poor performance but should always work. \n");
+	log_info("    --perf		Use binary perf for tracing, great performance, require CONFIG_FRAME_POINTER enabled. \n");
+	// log_info("    --page		Collect page usage statistic. \n");
+	// log_info("    --slab		Collect slab cache usage statistic. \n");
+	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M \n");
+	// log_info("    --json		Format result as json. \n");
+	// log_info("    --trace-base [DIR]	Use a different tracing mount path. \n");
+	log_info("    --help 		Print this message. \n");
+	// log_info("    --throttle-output [PERCENTAGE] \n");
+	// log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed. \n");
+	// log_info("    			expect a number between 0 to 100. Useful to filter minor noises. \n");
+}
+
+int main(int argc, char **argv) {
+	while (1) {
+		int opt;
+		int option_index = 0;
+
+		opt = getopt_long(argc, argv, "db:h", long_options, &option_index);
+
+		/* Detect the end of the options. */
+		if (opt == -1)
+			break;
+
+		switch (opt)
+		{
+			case 0:
+				// Flag setted, nothing to do
+				break;
+			case 'd':
+				memtrac_debug = 1;
+				break;
+			case 'h':
+				memtrac_human = 1;
+				break;
+			case 'b':
+				memtrac_perf_base = calloc(sizeof(char), strlen(optarg) + 1);
+				strcpy(memtrac_perf_base, optarg);
+				break;
+			case 't':
+				// Not implemented
+				break;
+			case '?':
+				display_usage();
+				exit(0);
+			default:
+				display_usage();
+				exit(1);
+		}
+	}
+
+	if (memtrac_perf && memtrac_ftrace) {
+		log_error("Can't have --ftrace and --perf set together!\n");
+		exit(EINVAL);
+	}
+
+	if (!memtrac_perf && !memtrac_ftrace) {
+		memtrac_perf = 1;  // Use perf by default
+	}
+
+	if (memtrac_debug) {
+		log_debug("Debug mode is on\n");
+	}
+
+	if (getuid() != 0) {
+		log_error("This tool requires root permission to work.\n");
+		exit(EPERM);
+	}
+
+	int err;
+	if (memtrac_perf) {
+		err = perf_events_init();
+		if (err) {
+			log_error("Failed initializing perf event buffer: %s!", strerror(err));
+			exit(err);
+		}
 		signal(SIGINT, on_signal);
 		do_process_perf();
-	} else {
-		ftrace_init();
+	} else if (memtrac_ftrace) {
+		err = ftrace_init();
+		if (err) {
+			log_error("Failed initializing perf event buffer: %s!", strerror(err));
+			exit(err);
+		}
 		signal(SIGINT, on_signal);
 		do_process_ftrace();
+	} else if (0) {
+		// TODO
 	}
-		on_exit();
+	on_exit();
 }

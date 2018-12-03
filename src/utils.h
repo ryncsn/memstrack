@@ -2,6 +2,7 @@
 #define _ANALYZER_UTILS 1
 #define HASH_BUCKET 1024
 
+
 struct TreeNode {
 	struct TreeNode* left;
 	struct TreeNode* right;

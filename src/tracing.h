@@ -1,5 +1,7 @@
 #include "utils.h"
 
+extern struct HashMap TaskMap;
+
 struct Record {
 	unsigned int bytes_req;
 	unsigned int bytes_alloc;

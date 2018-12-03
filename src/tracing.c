@@ -3,7 +3,14 @@
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+#include "memory-tracer.h"
 #include "tracing.h"
+
+struct HashMap TaskMap = {
+	hashTask,
+	compTask,
+	{NULL},
+};
 
 void update_record(struct Record *record, struct Event *event) {
 	record->bytes_req += event->bytes_req;
@@ -190,48 +197,48 @@ void print_tracenode(struct TreeNode* tnode, void *blob) {
 		padding[i] = ' ';
 	}
 	if(current->count) {
-		printf(",\n");
+		log_info(",\n");
 	}
 	if (tracenode->callsite) {
-		printf("%s\"%s\": ", padding, tracenode->callsite);
+		log_info("%s\"%s\": ", padding, tracenode->callsite);
 	} else if (tracenode->callsite_addr) {
-		printf("%s\"0x%llx\": ", padding, tracenode->callsite_addr);
+		log_info("%s\"0x%llx\": ", padding, tracenode->callsite_addr);
 	} else {
-		printf("%s\"unknown\": ", padding);
+		log_info("%s\"unknown\": ", padding);
 	}
-	printf("{\n");
-	printf("%s \"cache_alloc\": %d,\n", padding, tracenode->record.bytes_alloc);
-	printf("%s \"cache_req\": %d,\n", padding, tracenode->record.bytes_req);
-	printf("%s \"pages_alloc\": %d", padding, tracenode->record.pages_alloc);
+	log_info("{\n");
+	log_info("%s \"cache_alloc\": %d,\n", padding, tracenode->record.bytes_alloc);
+	log_info("%s \"cache_req\": %d,\n", padding, tracenode->record.bytes_req);
+	log_info("%s \"pages_alloc\": %d", padding, tracenode->record.pages_alloc);
 	if (tracenode->tracepoints) {
-		printf(",\n%s \"callsites\": {\n", padding);
+		log_info(",\n%s \"callsites\": {\n", padding);
 		iter_tree_node(&tracenode->tracepoints->node, print_tracenode, &next);
-		printf("\n%s }\n", padding);
+		log_info("\n%s }\n", padding);
 	} else {
-		printf("\n");
+		log_info("\n");
 	}
-	printf("%s}", padding);
+	log_info("%s}", padding);
 	current->count++;
 }
 
 void print_task(struct Task* task) {
 	struct json_marker marker = {2, 0};
-	printf(" {\n");
-	printf("  \"task_name\": \"%s\",\n", task->task_name);
-	printf("  \"pid\" :\"%d\",\n", task->pid);
-	printf("  \"cache_alloc\": %d,\n", task->record.bytes_alloc);
-	printf("  \"cache_req\": %d,\n", task->record.bytes_req);
-	printf("  \"pages_alloc\": %d,\n", task->record.pages_alloc);
-	printf("  \"callsites\": {\n");
+	log_info(" {\n");
+	log_info("  \"task_name\": \"%s\",\n", task->task_name);
+	log_info("  \"pid\" :\"%d\",\n", task->pid);
+	log_info("  \"cache_alloc\": %d,\n", task->record.bytes_alloc);
+	log_info("  \"cache_req\": %d,\n", task->record.bytes_req);
+	log_info("  \"pages_alloc\": %d,\n", task->record.pages_alloc);
+	log_info("  \"callsites\": {\n");
 	if(task->tracepoints) {
 		iter_tree_node(&task->tracepoints->node, print_tracenode, &marker);
 	}
-	printf("\n  }\n");
-	printf(" }\n");
+	log_info("\n  }\n");
+	log_info(" },\n");
 }
 
 void print_all_tasks(struct HashMap *map) {
-	printf("[\n");
+	log_info("[\n");
 	for (int i = 0; i < HASH_BUCKET; i++) {
 		if (map->buckets[i] != NULL) {
 			print_task
@@ -242,5 +249,5 @@ void print_all_tasks(struct HashMap *map) {
 				);
 		}
 	}
-	printf("]\n");
+	log_info("]\n");
 }

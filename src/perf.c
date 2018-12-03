@@ -11,15 +11,17 @@
 #include <sys/sysinfo.h>
 #include <linux/perf_event.h>
 
+#include "memory-tracer.h"
 #include "perf.h"
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
+#define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
 static inline int sys_perf_event_open(struct perf_event_attr *attr,
                       int pid, int cpu, int group_fd,
                       unsigned long flags)
 {
-	printf("CPU: %d ID: %lld\n", cpu, attr->config);
+	log_debug("Opening perf event on CPU: %d event: %lld\n", cpu, attr->config);
 	return syscall(__NR_perf_event_open, attr, pid, cpu,
 			group_fd, flags);
 }
@@ -38,9 +40,20 @@ unsigned int get_perf_event_id(const char* event) {
 
 	event_group = strtok(event_buffer, ":");
 	event_name = strtok(NULL, ":");
-	sprintf(path_buffer, "%s/%s/%s/id", PERF_EVENTS_PATH, event_group, event_name);
 
+	if(!event_group | !event_name) {
+		return EINVAL;
+	}
+
+	sprintf(path_buffer, "%s/%s/%s/id", PERF_EVENTS_PATH, event_group, event_name);
 	FILE *id_file = fopen(path_buffer, "r");
+	if (!id_file) {
+		sprintf(path_buffer, "%s/%s/%s/id", PERF_EVENTS_PATH_ALT, event_group, event_name);
+		id_file = fopen(path_buffer, "r");
+	}
+	if (!id_file) {
+		return ENOENT;
+	}
 	fscanf(id_file, "%u", &event_id);
 	fclose(id_file);
 
@@ -58,7 +71,8 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 	attr.sample_type = SAMPLE_CONFIG_FLAG;
 
 	attr.disabled = 1;
-	// attr.exclude_callchain_user = 1;
+	attr.exclude_callchain_user = 1;
+	attr.exclude_callchain_kernel = 0;
 	attr.config = perf_event->event_id;
 	attr.precise_ip = 2;
 
@@ -66,14 +80,14 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 
 	attr.wakeup_watermark = mmap_size / 4;
 	if (attr.wakeup_watermark < (__u32)getpagesize()) {
-		fprintf(stderr, "perf ring buffer too small!\n");
+		log_error("perf ring buffer too small!\n");
 	}
 	attr.watermark = 1;
 
 	perf_fd = sys_perf_event_open(&attr, -1, perf_event->cpu, -1, 0);
 
 	if (perf_fd <= 0) {
-		fprintf(stderr, "Error calling perf_event_open: %s\n", strerror(errno));
+		log_error("Error calling perf_event_open: %s\n", strerror(errno));
 		return errno;
 	}
 
@@ -85,7 +99,7 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 			PROT_READ | PROT_WRITE, MAP_SHARED, perf_fd, 0);
 
 	if (perf_mmap == MAP_FAILED) {
-		fprintf(stderr, "Failed mmaping perf ring buffer: %s\n", strerror(errno));
+		log_error("Failed mmaping perf ring buffer: %s\n", strerror(errno));
 		return errno;
 	}
 
@@ -100,24 +114,24 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 }
 
 int perf_event_start_sampling(struct PerfEvent *perf_event) {
+	int ret;
 	char buffer[1024];
 	sprintf(buffer, "common_pid!=%d", getpid());
 
-	fprintf(stderr, "FD is %d!\n", perf_event->perf_fd);
-	int ret;
+	log_debug("Starting sampling on perf fd %d\n", perf_event->perf_fd);
 	ret = ioctl(perf_event->perf_fd, PERF_EVENT_IOC_RESET, 0);
 	if (ret) {
-		fprintf(stderr, "Failed to reset perf sampling!\n");
+		log_error("Failed to reset perf sampling!\n");
 	}
 
 	ret = ioctl(perf_event->perf_fd, PERF_EVENT_IOC_SET_FILTER, buffer);
 	if (ret) {
-		fprintf(stderr, "Failed apply event filter!\n");
+		log_error("Failed apply event filter!\n");
 	}
 
 	ret = ioctl(perf_event->perf_fd, PERF_EVENT_IOC_ENABLE, 0);
 	if (ret) {
-		fprintf(stderr, "Failed to start perf sampling!\n");
+		log_error("Failed to start perf sampling!\n");
 	}
 
 	return ret;
@@ -125,31 +139,33 @@ int perf_event_start_sampling(struct PerfEvent *perf_event) {
 
 int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
-	fprintf(stderr, "DEBUG: Event: %s\n", perf_event->event_name);
+	log_debug("Event: %s", perf_event->event_name);
 
 	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_TID & PERF_SAMPLE_CPU) {
-		fprintf(stderr, "DEBUG: %s on PID %d, TID %d, CPU %d, RES %d\n", perf_event->event_name, body->pid, body->tid, body->cpu, body->res);
+		log_debug(" on PID %d, TID %d, CPU %d, RES %d\n", perf_event->event_name, body->pid, body->tid, body->cpu, body->res);
+	} else {
+		log_debug("\n");
 	}
 
 	header += sizeof(*body);
 
 	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_CALLCHAIN) {
 		struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
-		fprintf(stderr, "Stack size %lu\n", callchain->nr);
+		log_debug("Callchain size: %lu\n", callchain->nr);
 		header += sizeof(callchain->nr);
 		for (int i = 0; i < (int)callchain->nr; i++) {
-			fprintf(stderr, "IP %lx\n", *((&callchain->ips) + i));
+			log_debug("IP: %lx\n", *((&callchain->ips) + i));
 			header += sizeof(callchain->ips);
 		}
 	}
 
 	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_RAW) {
 		struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
-		fprintf(stderr, "Raw size %u\n", raw->size);
+		log_debug("Raw data size: %u\n", raw->size);
 
 		unsigned char *raw_data = (unsigned char*)(&raw->data);
 		for (int i = 0; i < (int)raw->size; ++i) {
-			fprintf(stderr, "Raw sec %d: 0x%x\n", i, raw_data[i]);
+			log_debug("Raw data[%d]: 0x%x\n", i, raw_data[i]);
 		}
 	}
 
@@ -158,7 +174,7 @@ int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header
 
 int perf_handle_lost_event(const unsigned char* header) {
 	struct perf_lost_events *body = (struct perf_lost_events*)header;
-	fprintf(stderr, "Lost event on CPU %d!\n", body->sample_id.cpu);
+	log_warn("Lost event on CPU %d!\n", body->sample_id.cpu);
 	return 0;
 }
 
@@ -189,7 +205,7 @@ int perf_event_process(struct PerfEvent *perf_event) {
 			// case PERF_RECORD_THROTTLE:
 			// case PERF_RECORD_UNTHROTTLE:
 			default:
-				fprintf(stderr, "DEBUG: Unexpected Event %x!\n", header->type);
+				log_warn("Unexpected event type %x!\n", header->type);
 				break;
 		}
 		meta->data_tail += header->size;
@@ -205,12 +221,12 @@ int perf_event_clean(struct PerfEvent *perf_event) {
 	int ret;
 	ret = ioctl(perf_event->perf_fd, PERF_EVENT_IOC_DISABLE, 0);
 	if (ret) {
-		fprintf(stderr, "Failed to stop perf sampling!\n");
+		log_error("Failed to stop perf sampling!\n");
 	}
 
 	ret = munmap(perf_event->mmap, CPU_BUFSIZE);
 	if (ret) {
-		fprintf(stderr, "Failed to stop perf sampling!\n");
+		log_error("Failed to unmap perf ring buffer!\n");
 	} else {
 		perf_event->mmap = NULL;
 		perf_event->data = NULL;
@@ -219,7 +235,7 @@ int perf_event_clean(struct PerfEvent *perf_event) {
 
 	ret = close(perf_event->perf_fd);
 	if (ret) {
-		fprintf(stderr, "Failed to stop perf sampling!\n");
+		log_error("Failed to close perf fd!\n");
 	} else {
 		perf_event->perf_fd = -1;
 	}

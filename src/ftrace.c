@@ -1,6 +1,6 @@
+#include "memory-tracer.h"
 #include "ftrace.h"
 #include <string.h>
-#include <stdio.h>
 #include <unistd.h>
 
 #define FTRACE_MAX_PATH 4096
@@ -14,7 +14,7 @@ static const char TRACE_EVENTS[] = "kmem:kmem_cache_alloc";
 static const char TRACE_FILTER[] = "common_pid != %d";
 
 static void set_trace(const char* value, const char* path) {
-	printf("Setting %s to %s\n", value, path);
+	log_debug("Setting %s to %s\n", value, path);
 	char filename[FTRACE_MAX_PATH];
 	sprintf(filename, "%s/%s", TRACE_BASE, path);
 	FILE *file = fopen(filename, "w");
@@ -28,8 +28,9 @@ int ftrace_read_next_valid_line(char *buffer, int size, FILE *trace_file) {
 		ret = fgets(buffer, size, trace_file);
 	}
 	while (ret && ret[0] == '#');
-	if (strstr(buffer, "LOST"))
-		printf("%s", buffer);
+	if (strstr(buffer, "LOST")) {
+		log_warn("%s", buffer);
+	}
 	return !!ret;
 }
 
