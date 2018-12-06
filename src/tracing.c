@@ -6,11 +6,40 @@
 #include "memory-tracer.h"
 #include "tracing.h"
 
+#define TASK_NAME_LEN_MAX 1024
+
 struct HashMap TaskMap = {
 	hashTask,
 	compTask,
 	{NULL},
 };
+
+char* PidMap[65535];
+
+static char* get_process_name_by_pid(const int pid)
+{
+	char* name = (char*)calloc(sizeof(char), TASK_NAME_LEN_MAX);
+	if (name) {
+		sprintf(name, "/proc/%d/cmdline", pid);
+		FILE* f = fopen(name,"r");
+		if (f) {
+			size_t size;
+			size = fread(name, sizeof(char), TASK_NAME_LEN_MAX, f);
+			if (size > 0){
+				if ('\n' == name[size - 1]) {
+					name[size - 1] = '\0';
+				}
+			}
+			fclose(f);
+		} else {
+			log_error("Failed to retrive process name of %d\n", pid);
+			sprintf(name, "(%d)", pid);
+		}
+	} else {
+		return NULL;
+	}
+	return name;
+}
 
 void update_record(struct Record *record, struct Event *event) {
 	record->bytes_req += event->bytes_req;
@@ -139,7 +168,7 @@ int compTask(const void *lht, const void *rht) {
 	if (((struct Task*)lht)->pid != ((struct Task*)rht)->pid) {
 		return ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
 	} else {
-		return strcmp(((struct Task*)lht)->task_name, ((struct Task*)rht)->task_name);
+		return strncmp(((struct Task*)lht)->task_name, ((struct Task*)rht)->task_name, TASK_NAME_LEN_MAX);
 	}
 }
 
@@ -170,6 +199,14 @@ struct Task* insert_task(struct HashMap *map, struct Task* task) {
 };
 
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
+	if (task_name == NULL) {
+		// TODO: Remove Pid map entry if previous task exited
+		char *cmdline = PidMap[pid % 65535];
+		if (!cmdline) {
+			cmdline = PidMap[pid % 65535] = get_process_name_by_pid(pid);
+		}
+		task_name = cmdline;
+	}
 	struct Task *task = get_task(map, task_name, pid);
 	if (task == NULL) {
 		int task_name_len = strlen(task_name) + 1;

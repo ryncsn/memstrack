@@ -36,7 +36,7 @@ unsigned int get_perf_event_id(const char* event) {
 	char *event_group, *event_name;
 	unsigned int event_id;
 
-	strncpy(event_buffer, event, 1024);
+	strcpy(event_buffer, event);
 
 	event_group = strtok(event_buffer, ":");
 	event_name = strtok(NULL, ":");

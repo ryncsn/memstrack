@@ -24,7 +24,6 @@ int memtrac_ftrace;
 int memtrac_json;
 
 char* memtrac_perf_base;
-char* PidMap[65535];
 
 // For perf
 int perf_events_num;
@@ -64,31 +63,6 @@ void task_map_debug() {
 	}
 }
 
-char* get_process_name_by_pid(const int pid)
-{
-	char* name = (char*)calloc(sizeof(char), 1024);
-	if (name) {
-		sprintf(name, "/proc/%d/cmdline", pid);
-		FILE* f = fopen(name,"r");
-		if (f) {
-			size_t size;
-			size = fread(name, sizeof(char), 1024, f);
-			if (size > 0){
-				if ('\n' == name[size - 1]) {
-					name[size - 1]='\0';
-				}
-			}
-			fclose(f);
-		} else {
-			log_error("Failed to retrive process name of %d\n", pid);
-			sprintf(name, "%d", pid);
-		}
-	} else {
-		return NULL;
-	}
-	return name;
-}
-
 void on_exit() {
 	if (ftrace_file) {
 		ftrace_cleanup(&ftrace_file);
@@ -110,6 +84,42 @@ void on_signal(int signal) {
 	on_exit();
 }
 
+const unsigned char* perf_handle_common(struct PerfEvent *perf_event, const unsigned char* header,
+		struct perf_sample_fix **body, struct perf_sample_callchain **callchain,
+		struct perf_sample_raw **raw, void **raw_data) {
+	perf_event->counter++;
+
+	*body = (struct perf_sample_fix*)header;
+	header += sizeof(struct perf_sample_fix);
+
+	*callchain = (struct perf_sample_callchain*)header;
+	header += sizeof((*callchain)->nr) + sizeof((*callchain)->ips) * (*callchain)->nr;
+
+	*raw = (struct perf_sample_raw*)header;
+	*raw_data = (void*)&((*raw)->data);
+	header += sizeof((*raw)->size) + (*raw)->size;
+
+	return header;
+}
+
+void perf_handle_stacktrace(struct perf_sample_callchain *callchain) {
+	struct TraceNode *tp = NULL;
+	for (int i = 1; i <= (int)callchain->nr; i++) {
+		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
+			//FIXME
+			continue;
+		}
+		if (i == 1) {
+			update_record(&current_task->record, &current_event);
+			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		} else {
+			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+		}
+		update_record(&tp->record, &current_event);
+	}
+}
+
+
 int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* __) {
 	perf_event->counter++;
 	return 0;
@@ -118,38 +128,19 @@ int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* __) {
 int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
 	perf_event->counter++;
 
-	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
-	header += sizeof(*body);
+	struct perf_sample_fix *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+	struct perf_raw_kmem_cache_alloc *raw_data;
 
-	struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
-	header += sizeof(callchain->nr) + sizeof(callchain->ips) * callchain->nr;
+	header = perf_handle_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
-	struct perf_raw_kmem_cache_alloc *raw_data = (struct perf_raw_kmem_cache_alloc*)(&raw->data);
-
-	char *cmdline = PidMap[body->pid];
-	if (!cmdline) {
-		cmdline = PidMap[body->pid] = get_process_name_by_pid(body->pid);
-	}
-	current_task = get_or_new_task(&TaskMap, cmdline, body->pid);
+	current_task = get_or_new_task(&TaskMap, NULL, body->pid);
 	current_event.bytes_req = raw_data->bytes_req;
 	current_event.bytes_alloc = raw_data->bytes_alloc;
 	current_event.pages_alloc = 0;
 
-	struct TraceNode *tp = NULL;
-	for (int i = 1; i <= (int)callchain->nr; i++) {
-		if ( 0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
-			//FIXME
-			continue;
-		}
-		if (i == 1) {
-			update_record(&current_task->record, &current_event);
-			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
-		} else {
-			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
-		}
-		update_record(&tp->record, &current_event);
-	}
+	perf_handle_stacktrace(callchain);
 
 	return 0;
 }
@@ -157,40 +148,24 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
 	perf_event->counter++;
 
-	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
-	header += sizeof(*body);
+	struct perf_sample_fix *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+	struct perf_raw_mm_page_alloc *raw_data;
 
-	struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
-	header += sizeof(callchain->nr) + sizeof(callchain->ips) * callchain->nr;
+	header = perf_handle_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
-	struct perf_raw_mm_page_alloc *raw_data = (struct perf_raw_mm_page_alloc*)(&raw->data);
-
-	char *cmdline = PidMap[body->pid];
-	if (!cmdline) {
-		cmdline = PidMap[body->pid] = get_process_name_by_pid(body->pid);
-	}
-	current_task = get_or_new_task(&TaskMap, cmdline, body->pid);
+	current_task = get_or_new_task(&TaskMap, NULL, body->pid);
 	current_event.bytes_req = 0;
 	current_event.bytes_alloc = 0;
 	current_event.pages_alloc = 1;
 	struct TraceNode *tp = NULL;
+
 	for (int i = 0; i < (int)raw_data->order; ++i) {
 		current_event.pages_alloc *= 2;
 	}
-	for (int i = 1; i <= (int)callchain->nr; i++) {
-		if ( 0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
-			//FIXME
-			continue;
-		}
-		if (i == 1) {
-			update_record(&current_task->record, &current_event);
-			tp = get_or_new_tracepoint_raw(&current_task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
-		} else {
-			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
-		}
-		update_record(&tp->record, &current_event);
-	}
+
+	perf_handle_stacktrace(callchain);
 
 	return 0;
 }
@@ -204,8 +179,8 @@ const char *PERF_EVENTS[] = {
 
 SampleHandler PERF_EVENTS_HANDLERS[] = {
 	perf_handle_mm_page_alloc,
-	perf_handle_kmem_cache_alloc,
 	perf_handle_nothing,
+	perf_handle_kmem_cache_alloc,
 	perf_handle_nothing,
 };
 
@@ -215,7 +190,7 @@ int perf_events_init() {
 	const int event_num = sizeof(PERF_EVENTS) / sizeof(const char*);
 
 	perf_events_num = cpu_num * event_num;
-	perf_events = calloc(sizeof(struct PerfEvent), perf_events_num);
+	perf_events = (struct PerfEvent*)calloc(sizeof(struct PerfEvent), perf_events_num);
 
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
 		for (int event = 0; event < event_num; event++){
@@ -226,7 +201,7 @@ int perf_events_init() {
 				break;
 			}
 			perf_events[cpu + event * cpu_num].cpu = cpu;
-			perf_events[cpu + event * cpu_num].event_name = malloc(strlen(PERF_EVENTS[event]) + 1);
+			perf_events[cpu + event * cpu_num].event_name = (char*)malloc(strlen(PERF_EVENTS[event]) + 1);
 			if (perf_events[cpu + event * cpu_num].event_name == NULL){
 				err = ENOMEM;
 				break;
@@ -266,7 +241,7 @@ struct TraceNode* ftrace_process_stacktrace() {
 	int callsite_len = 0;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
 	callsite_len = strlen(callsite_arg);
-	callsite = malloc(callsite_len + 1);
+	callsite = (char*)malloc(callsite_len + 1);
 	strcpy(callsite, callsite_arg);
 	callsite[callsite_len - 1] = '\0';
 
@@ -287,7 +262,7 @@ struct TraceNode* ftrace_process_stacktrace() {
 
 void do_process_perf() {
 	int err;
-	struct pollfd *perf_fds = calloc(sizeof(struct pollfd), perf_events_num);
+	struct pollfd *perf_fds = (struct pollfd*)calloc(sizeof(struct pollfd), perf_events_num);
 	for (int i = 0; i < perf_events_num; i++) {
 		err = perf_event_start_sampling(perf_events + i);
 		if (err) {
@@ -422,7 +397,7 @@ int main(int argc, char **argv) {
 				memtrac_human = 1;
 				break;
 			case 'b':
-				memtrac_perf_base = calloc(sizeof(char), strlen(optarg) + 1);
+				memtrac_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
 				strcpy(memtrac_perf_base, optarg);
 				break;
 			case 't':
