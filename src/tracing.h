@@ -1,4 +1,5 @@
 #include "utils.h"
+#ifndef _MEMORY_TRACER_TRACING_LIB
 
 extern struct HashMap TaskMap;
 
@@ -33,6 +34,11 @@ struct Event {
 	int pages_alloc;
 };
 
+struct Context {
+	struct Task *task;
+	struct Event event;
+};
+
 void update_record(struct Record *record, struct Event *event);
 int compTraceNodeResolved(struct TreeNode *src, struct TreeNode *root);
 int compTraceNodeRaw(struct TreeNode *src, struct TreeNode *root);
@@ -54,3 +60,7 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
 
 void print_task(struct Task* task);
 void print_all_tasks(struct HashMap *map);
+
+#define _MEMORY_TRACER_TRACING_LIB 1
+
+#endif /* ifndef _MEMORY_TRACER_TRACING_LIB */

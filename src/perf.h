@@ -11,7 +11,7 @@ struct PerfEvent {
 	int perf_id;
 	int event_id;
 	char* event_name;
-	int (*sample_handler) (struct PerfEvent*, const unsigned char*);
+	int (*sample_handler) (struct PerfEvent*, const unsigned char*, void *blob);
 
 	void *mmap;
 	unsigned long long mmap_size;
@@ -25,7 +25,7 @@ struct PerfEvent {
 	struct perf_event_mmap_page *meta;
 };
 
-typedef int (*SampleHandler) (struct PerfEvent*, const unsigned char*);
+typedef int (*SampleHandler) (struct PerfEvent*, const unsigned char*, void *blob);
 
 struct read_format {
 	uint64_t value;			/* The value of the event */
@@ -216,5 +216,5 @@ unsigned int get_perf_event_id(const char*);
 
 int perf_event_setup(struct PerfEvent *perf_event);
 int perf_event_start_sampling(struct PerfEvent *perf_event);
-int perf_event_process(struct PerfEvent *perf_event);
+int perf_event_process(struct PerfEvent *perf_event, void *blob);
 int perf_event_clean(struct PerfEvent *perf_event);

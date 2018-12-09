@@ -1,6 +1,8 @@
 extern int memtrac_debug;
 extern int memtrac_human;
 extern int memtrac_perf;
+extern int memtrac_slab;
+extern int memtrac_page;
 extern int memtrac_ftrace;
 extern int memtrac_json;
 extern int memtrac_print;

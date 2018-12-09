@@ -1,11 +1,8 @@
-#define _GNU_SOURCE        /* See feature_test_macros(7) */
-#include <sys/mman.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <unistd.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <sys/sysinfo.h>
@@ -18,8 +15,8 @@
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
 static inline int sys_perf_event_open(struct perf_event_attr *attr,
-                      int pid, int cpu, int group_fd,
-                      unsigned long flags)
+		int pid, int cpu, int group_fd,
+		unsigned long flags)
 {
 	log_debug("Opening perf event on CPU: %d event: %lld\n", cpu, attr->config);
 	return syscall(__NR_perf_event_open, attr, pid, cpu,
@@ -95,7 +92,7 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 
 	// Extra one page for metadata
 	void *perf_mmap = mmap(NULL,
-		       	mmap_size ,
+			mmap_size ,
 			PROT_READ | PROT_WRITE, MAP_SHARED, perf_fd, 0);
 
 	if (perf_mmap == MAP_FAILED) {
@@ -137,7 +134,7 @@ int perf_event_start_sampling(struct PerfEvent *perf_event) {
 	return ret;
 }
 
-int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header) {
+int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
 	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
 	log_debug("Event: %s", perf_event->event_name);
 
@@ -178,7 +175,7 @@ int perf_handle_lost_event(const unsigned char* header) {
 	return 0;
 }
 
-int perf_event_process(struct PerfEvent *perf_event) {
+int perf_event_process(struct PerfEvent *perf_event, void *blob) {
 	unsigned char* data;
 	struct perf_event_header *header;
 	struct perf_event_mmap_page *meta;
@@ -190,20 +187,20 @@ int perf_event_process(struct PerfEvent *perf_event) {
 		switch (header->type) {
 			case PERF_RECORD_SAMPLE:
 				if (perf_event->sample_handler) {
-					perf_event->sample_handler(perf_event, data);
+					perf_event->sample_handler(perf_event, data, blob);
 				} else {
-					perf_handle_sample(perf_event, data);
+					perf_handle_sample(perf_event, data, blob);
 				}
 				break;
 			case PERF_RECORD_LOST:
 				perf_handle_lost_event(data);
 				break;
-			// case PERF_RECORD_MMAP:
-			// case PERF_RECORD_FORK:
-			// case PERF_RECORD_COMM:
-			// case PERF_RECORD_EXIT:
-			// case PERF_RECORD_THROTTLE:
-			// case PERF_RECORD_UNTHROTTLE:
+				// case PERF_RECORD_MMAP:
+				// case PERF_RECORD_FORK:
+				// case PERF_RECORD_COMM:
+				// case PERF_RECORD_EXIT:
+				// case PERF_RECORD_THROTTLE:
+				// case PERF_RECORD_UNTHROTTLE:
 			default:
 				log_warn("Unexpected event type %x!\n", header->type);
 				break;

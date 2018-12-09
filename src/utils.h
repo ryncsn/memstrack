@@ -1,5 +1,5 @@
-#ifndef _ANALYZER_UTILS
-#define _ANALYZER_UTILS 1
+#ifndef _MEMORY_TRACER_UTILS
+#define _MEMORY_TRACER_UTILS 1
 #define HASH_BUCKET 1024
 
 
@@ -56,4 +56,4 @@ struct HashNode* insert_hash_node(
 		struct HashNode* src,
 		void *key);
 
-#endif /* ifndef _ANALYZER_UTILS */
+#endif /* ifndef _MEMORY_TRACER_UTILS */

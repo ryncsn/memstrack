@@ -8,10 +8,9 @@
 char FTRACE_STACK_TRACE_SIGN[] = " => ";
 char FTRACE_STACK_TRACE_EVENT[] = "<stack trace>";
 
-static const char TRACE_FILE[] = "/sys/kernel/debug/tracing/trace_pipe";
-static const char TRACE_BASE[] = "/sys/kernel/debug/tracing";
-static const char TRACE_EVENTS[] = "kmem:kmem_cache_alloc";
-static const char TRACE_FILTER[] = "common_pid != %d";
+#define TRACE_FILE "/sys/kernel/debug/tracing/trace_pipe"
+#define TRACE_BASE "/sys/kernel/debug/tracing"
+#define TRACE_FILTER "common_pid != %d"
 
 static void set_trace(const char* value, const char* path) {
 	log_debug("Setting %s to %s\n", value, path);
@@ -29,7 +28,7 @@ int ftrace_read_next_valid_line(char *buffer, int size, FILE *trace_file) {
 	}
 	while (ret && ret[0] == '#');
 	if (strstr(buffer, "LOST")) {
-		log_warn("%s", buffer);
+		log_error("%s", buffer);
 	}
 	return !!ret;
 }
@@ -44,10 +43,10 @@ int ftrace_cleanup(FILE **file) {
 	return 0;
 }
 
-int ftrace_setup(FILE **file) {
+int ftrace_setup(FILE **file, const char* trace_events) {
 	char buffer[FTRACE_MAX_PATH];
 	sprintf(buffer, TRACE_FILTER, getpid());
-	set_trace(TRACE_EVENTS, "set_event");
+	set_trace(trace_events, "set_event");
 	set_trace(buffer, "events/kmem/filter");
 	set_trace("4096", "saved_cmdlines_size");
 	set_trace("1", "tracing_on");
