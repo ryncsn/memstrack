@@ -1,6 +1,28 @@
 #include <stddef.h>
 #include "utils.h"
 
+static int try_left_rotate(struct TreeNode **root) {
+	struct TreeNode *right = (*root)->right;
+	if (right == NULL) {
+		return 1;
+	}
+	(*root)->right = right->left;
+	right->left = (*root);
+	*root = right;
+	return 0;
+}
+
+static int try_right_rotate(struct TreeNode **root) {
+	struct TreeNode *left = (*root)->left;
+	if(left == NULL) {
+		return 1;
+	}
+	(*root)->left = left->right;
+	left->right = (*root);
+	*root = left;
+	return 0;
+}
+
 struct TreeNode* get_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,
@@ -9,18 +31,37 @@ struct TreeNode* get_tree_node(
 	if (*root_p == NULL) {
 		return NULL;
 	}
-	struct TreeNode *root = *root_p;
-	while (root) {
-		int result = comp(src, root);
+	struct TreeNode **root = root_p;
+	int result;
+	while (*root) {
+		result = comp(src, *root);
 		if (result == 0) {
-			return root;
-		} else if (result < 0) {
-			root = root->left;
+			return *root;
+		} else if (result < 0 && (*root)->left) {
+			result = comp(src, (*root)->left);
+			try_right_rotate(root);
+			if (result == 0) {
+				return *root;
+			} else if (result < 0) {
+				root = &(*root)->left;
+			} else {
+				root = &(*root)->right;
+			}
+		} else if ((*root)->right) {
+			result = comp(src, (*root)->right);
+			try_left_rotate(root);
+			if (result == 0) {
+				return *root;
+			} else if (result < 0) {
+				root = &(*root)->right;
+			} else {
+				root = &(*root)->left;
+			}
 		} else {
-			root = root->right;
+			return NULL;
 		}
 	}
-	return root;
+	return *root;
 }
 
 struct TreeNode* insert_tree_node(
