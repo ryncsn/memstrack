@@ -16,6 +16,14 @@ struct HashMap TaskMap = {
 
 char* PidMap[65535];
 
+static struct Symbol {
+	unsigned long long addr;
+	char type;
+	char* module;
+	char* sym_name;
+	struct Symbol *next;
+} *Symbols;
+
 static char* get_process_name_by_pid(const int pid)
 {
 	char* name = (char*)calloc(sizeof(char), TASK_NAME_LEN_MAX);
@@ -224,6 +232,87 @@ struct json_marker {
 	int count;
 };
 
+static void _load_kallsyms() {
+	FILE *proc_kallsyms = fopen("/proc/kallsyms", "r");
+	char kallsyms_line[4096];
+	struct Symbol **sym_tail = &Symbols;
+	while(fgets(kallsyms_line, 4096, proc_kallsyms)) {
+		char *addr_arg = strtok(kallsyms_line, " ");
+		char *type_arg = strtok(NULL, " ");
+		char *symbol_arg = strtok(NULL, " ");
+		char *module_arg = strtok(NULL, " ");
+
+		struct Symbol *symbol = malloc(sizeof(struct Symbol));
+		if (module_arg) {
+			module_arg[strlen(module_arg) - 1] = '\0';
+			while (module_arg[0] == ' ') {
+				module_arg++;
+			}
+			symbol->module = malloc(strlen(module_arg) + 1);
+			strcpy(symbol->module, module_arg);
+		} else {
+			symbol_arg[strlen(symbol_arg) - 1] = '\0';
+			symbol->module = NULL;
+		}
+
+		symbol->type = *type_arg;
+		sscanf(addr_arg, "%llx", &symbol->addr);
+		symbol->sym_name = malloc(strlen(symbol_arg) + 1);
+		strcpy(symbol->sym_name, symbol_arg);
+		symbol->next = NULL;
+
+		*sym_tail = symbol;
+		sym_tail = &symbol->next;
+	}
+}
+
+static char* _find_symbol(unsigned long long addr) {
+	static char _format_buffer[4096];
+	struct Symbol *head = Symbols;
+	struct Symbol *closest = head;
+	while (head != NULL) {
+		if (head->addr < addr) {
+			if (head->addr - addr > closest->addr - addr) {
+				closest = head;
+			}
+		}
+		head = head->next;
+	}
+	if (closest) {
+		sprintf(_format_buffer, "%s %s", closest->sym_name, closest->module);
+	} else {
+		sprintf(_format_buffer, "0x%llx", addr);
+	}
+	return _format_buffer;
+};
+
+void count_tree_node(struct TreeNode* _, void *blob) {
+	int *count = (int*) blob;
+	*count += 1;
+}
+
+void collect_tree_node(struct TreeNode* tnode, void *blob) {
+	struct TreeNode ***tail = (struct TreeNode***) blob;
+	**tail = tnode;
+	(*tail) ++;
+}
+
+static int comp_callsite_node_mem(const void *x, const void *y) {
+	struct TraceNode *x_n = get_node_data(*(struct TreeNode**)x, struct TraceNode, node);
+	struct TraceNode *y_n = get_node_data(*(struct TreeNode**)y, struct TraceNode, node);
+	return x_n->record.pages_alloc < y_n->record.pages_alloc;
+}
+
+struct TreeNode **sort_callsites(struct TreeNode *root) {
+	int count = 0;
+	struct TreeNode **callsites, **tail;
+	iter_tree_node(root, count_tree_node, &count);
+	tail = callsites = calloc(count + 1, sizeof(struct TreeNode*));
+	iter_tree_node(root, collect_tree_node, &tail);
+	qsort((void*)callsites, count, sizeof(struct TreeNode*), comp_callsite_node_mem);
+	return callsites;
+}
+
 void print_tracenode(struct TreeNode* tnode, void *blob) {
 	struct json_marker *current = (struct json_marker*)blob;
 	struct json_marker next = {current->indent + 2, 0};
@@ -239,7 +328,7 @@ void print_tracenode(struct TreeNode* tnode, void *blob) {
 	if (tracenode->callsite) {
 		log_info("%s\"%s\": ", padding, tracenode->callsite);
 	} else if (tracenode->callsite_addr) {
-		log_info("%s\"0x%llx\": ", padding, tracenode->callsite_addr);
+		log_info("%s\"%s\": ", padding, _find_symbol(tracenode->callsite_addr));
 	} else {
 		log_info("%s\"unknown\": ", padding);
 	}
@@ -249,7 +338,12 @@ void print_tracenode(struct TreeNode* tnode, void *blob) {
 	log_info("%s \"pages_alloc\": %d", padding, tracenode->record.pages_alloc);
 	if (tracenode->tracepoints) {
 		log_info(",\n%s \"callsites\": {\n", padding);
-		iter_tree_node(&tracenode->tracepoints->node, print_tracenode, &next);
+		struct TreeNode **nodes;
+		nodes = sort_callsites(&tracenode->tracepoints->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_tracenode(nodes[i], &next);
+		}
+		free(nodes);
 		log_info("\n%s }\n", padding);
 	} else {
 		log_info("\n");
@@ -268,23 +362,63 @@ void print_task(struct Task* task) {
 	log_info("  \"pages_alloc\": %d,\n", task->record.pages_alloc);
 	log_info("  \"callsites\": {\n");
 	if(task->tracepoints) {
-		iter_tree_node(&task->tracepoints->node, print_tracenode, &marker);
+		struct TreeNode **nodes;
+		nodes = sort_callsites(&task->tracepoints->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_tracenode(nodes[i], &marker);
+		}
+		free(nodes);
 	}
 	log_info("\n  }\n");
 	log_info(" },\n");
 }
 
-void print_all_tasks(struct HashMap *map) {
-	log_info("[\n");
+int comp_task_mem(const void *x, const void *y) {
+	return (*(struct Task**)x)->record.pages_alloc < (*(struct Task**)y)->record.pages_alloc;
+}
+
+struct Task **sort_tasks(struct HashMap *map) {
+	struct Task **tasks = NULL;
+	struct HashNode *node = NULL;
+	int task_count = 0;
 	for (int i = 0; i < HASH_BUCKET; i++) {
 		if (map->buckets[i] != NULL) {
-			print_task
-				(get_node_data
-				 (map->buckets[i],
-				  struct Task,
-				  node)
-				);
+			node = map->buckets[i];
+			while(node) {
+				node = node->next;
+				task_count ++;
+			}
 		}
+	}
+	tasks = calloc(task_count + 1, sizeof(struct Task*));
+	task_count = 0;
+	for (int i = 0; i < HASH_BUCKET; i++) {
+		if (map->buckets[i] != NULL) {
+			node = map->buckets[i];
+			while(node) {
+				tasks[task_count] = (get_node_data
+					 (node,
+					  struct Task,
+					  node)
+					);
+				task_count ++;
+				node = node->next;
+			}
+		}
+	}
+
+	tasks[task_count] = NULL;
+	qsort((void*)tasks, task_count, sizeof(struct Task*), comp_task_mem);
+
+	return tasks;
+}
+
+void print_all_tasks(struct HashMap *map) {
+	_load_kallsyms();
+	log_info("[\n");
+	struct Task **task = sort_tasks(map);
+	for (int i = 0; task[i] != NULL; i++) {
+		print_task(task[i]);
 	}
 	log_info("]\n");
 }

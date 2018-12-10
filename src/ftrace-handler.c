@@ -123,6 +123,7 @@ int ftrace_handling_process(struct Context *context) {
 		if (pre_last == NULL) {
 			log_error("Invalid Line: %s\n", ftrace_line);
 			__ignore_stacktrace();
+			continue;
 		}
 
 		char *last = strstr(pre_last + 2, ": "), *tmp;
