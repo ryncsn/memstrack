@@ -39,7 +39,7 @@ unsigned int get_perf_event_id(const char* event) {
 	event_name = strtok(NULL, ":");
 
 	if(!event_group | !event_name) {
-		return EINVAL;
+		return -EINVAL;
 	}
 
 	sprintf(path_buffer, "%s/%s/%s/id", PERF_EVENTS_PATH, event_group, event_name);
@@ -49,7 +49,7 @@ unsigned int get_perf_event_id(const char* event) {
 		id_file = fopen(path_buffer, "r");
 	}
 	if (!id_file) {
-		return ENOENT;
+		return -ENOENT;
 	}
 	fscanf(id_file, "%u", &event_id);
 	fclose(id_file);

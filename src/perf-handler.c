@@ -142,7 +142,7 @@ int perf_handling_init() {
 				continue;
 			}
 			perf_events[count].event_id = get_perf_event_id(PERF_EVENTS[event]);
-			if (perf_events[count].event_id == -1){
+			if (perf_events[count].event_id < 0){
 				log_error("Failed to retrive event id for \'%s\', please ensure tracefs is mounted\n", PERF_EVENTS[event]);
 				err = EINVAL;
 				break;
