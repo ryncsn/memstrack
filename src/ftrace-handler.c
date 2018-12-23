@@ -45,9 +45,12 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 	tp = __process_stacktrace(context);
 
 	if (tp == NULL) {
-		tp = get_or_new_tracepoint(&(context->task->tracepoints), callsite);
+		tp = to_tracenode(
+				get_or_new_child_callsite(
+					to_tracenode(context->task),
+				       	callsite, 0));
 	} else {
-		tp = get_or_new_tracepoint(&tp->tracepoints, callsite);
+		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
 	}
 
 	update_record(&tp->record, &context->event);
@@ -73,7 +76,6 @@ int ftrace_handling_clean() {
 }
 
 int ftrace_handle_mm_page_alloc(struct Context *context) {
-	unsigned long long ptr;
 	char *page_arg, *pfn_arg, *order_arg, *migratetype_arg, *gfp_flags_arg;
 	page_arg = strtok(NULL, " ") + sizeof("page=") - 1;
 	pfn_arg = strtok(NULL, " ") + sizeof("pfn=") - 1;
@@ -92,7 +94,7 @@ int ftrace_handle_mm_page_alloc(struct Context *context) {
 		context->event.pages_alloc *= 2;
 	}
 
-	update_record(&context->task->record, &context->event);
+	update_record(&to_tracenode(context->task)->record, &context->event);
 	return 0;
 }
 
@@ -111,7 +113,7 @@ int ftrace_handle_kmem_cache_alloc(struct Context *context) {
 		sscanf(bytes_req_arg, "%llx", &ptr);
 	}
 
-	update_record(&context->task->record, &context->event);
+	update_record(&to_tracenode(context->task)->record, &context->event);
 	return 0;
 }
 

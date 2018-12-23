@@ -11,7 +11,6 @@ struct TreeNode {
 
 struct HashNode {
 	void* key;
-
 	struct HashNode *next;
 };
 

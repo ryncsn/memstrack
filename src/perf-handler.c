@@ -33,20 +33,23 @@ static void __process_stacktrace(struct perf_sample_callchain *callchain, void *
 	struct TraceNode *tp = NULL;
 	struct Context *context = (struct Context*)blob;
 	for (int i = 1; i <= (int)callchain->nr; i++) {
+		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
 			//FIXME
 			continue;
 		}
 		if (i == 1) {
-			update_record(&context->task->record, &context->event);
-			tp = get_or_new_tracepoint_raw(&context->task->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+			update_record(&to_tracenode(&context->task)->record, &context->event);
+			tp = to_tracenode(
+					get_or_new_child_callsite(
+						to_tracenode(context->task),
+					       	NULL, addr));
 		} else {
-			tp = get_or_new_tracepoint_raw(&tp->tracepoints, *((&callchain->ips) + ((int)callchain->nr - i)));
+			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}
 		update_record(&tp->record, &context->event);
 	}
 }
-
 
 int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
 	perf_event->counter++;
@@ -55,7 +58,6 @@ int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* heade
 
 int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
 	struct Context *context = (struct Context*)blob;
-	perf_event->counter++;
 
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
@@ -75,7 +77,6 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 }
 
 int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	perf_event->counter++;
 	struct Context *context = (struct Context*)blob;
 
 	struct perf_sample_fix *body;
@@ -90,7 +91,29 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 	context->event.bytes_alloc = 0;
 	context->event.pages_alloc = 1;
 
-	struct TraceNode *tp = NULL;
+	for (int i = 0; i < (int)raw_data->order; ++i) {
+		context->event.pages_alloc *= 2;
+	}
+
+	__process_stacktrace(callchain, context);
+
+	return 0;
+}
+
+int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+	struct Context *context = (struct Context*)blob;
+
+	struct perf_sample_fix *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+	struct perf_raw_mm_page_free *raw_data;
+
+	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
+
+	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
+	context->event.bytes_req = 0;
+	context->event.bytes_alloc = 0;
+	context->event.pages_alloc = -1;
 
 	for (int i = 0; i < (int)raw_data->order; ++i) {
 		context->event.pages_alloc *= 2;
@@ -100,6 +123,7 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 
 	return 0;
 }
+
 
 const char *PERF_EVENTS[] = {
 	"kmem:mm_page_alloc",
@@ -189,7 +213,7 @@ int perf_handling_start() {
 }
 
 int perf_handling_process(struct Context* context) {
-	int err, i;
+	int err = 0, i;
 	struct pollfd *perf_fds = (struct pollfd*)calloc(sizeof(struct pollfd), perf_events_num);
 	for (i = 0; i < perf_events_num; i++) {
 		perf_fds[i].fd = perf_events[i].perf_fd;
@@ -197,7 +221,10 @@ int perf_handling_process(struct Context* context) {
 	}
 	poll(perf_fds, perf_events_num, 250);
 	for (i = 0; i < perf_events_num; i++) {
-		perf_event_process(perf_events + i, context);
+		err = perf_event_process(perf_events + i, context);
+		if (err) {
+			return err;
+		}
 	}
 	return err;
 }

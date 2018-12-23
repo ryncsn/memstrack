@@ -1,6 +1,10 @@
 #include "utils.h"
 #ifndef _MEMORY_TRACER_TRACING_LIB
 
+#define to_callsite(tracenode) ((struct Callsite*)tracenode)
+#define to_task(tracenode) ((struct Task*)tracenode)
+#define to_tracenode(node) ((struct TraceNode*)node)
+
 extern struct HashMap TaskMap;
 
 struct Record {
@@ -10,19 +14,30 @@ struct Record {
 };
 
 struct TraceNode {
-	char *callsite;
-	unsigned long long callsite_addr;
+	struct TraceNode *parent;
+	union {
+		struct Callsite *child_callsites;
+		struct Task *child_tasks;
+	};
 	struct Record record;
-	struct TraceNode *tracepoints;
+};
+
+struct Callsite {
+	// Keep it the first element
+	struct TraceNode tracenode;
+
+	char *symbol;
+	unsigned long addr;
 
 	struct TreeNode node;
 };
 
 struct Task {
-	int pid;
+	// Keep it the first element
+	struct TraceNode tracenode;
+
 	char *task_name;
-	struct Record record;
-	struct TraceNode *tracepoints;
+	int pid;
 
 	struct HashNode node;
 };
@@ -34,22 +49,35 @@ struct Event {
 	int pages_alloc;
 };
 
+struct PageRecord {
+	unsigned long long pfn;
+	int order;
+
+	struct TraceNode *tracenode;
+
+	struct TreeNode node;
+};
+
+struct PtrRecord {
+	unsigned long long addr;
+	int bytes_req;
+	int bytes_alloc;
+
+	struct TraceNode *tracenode;
+
+	struct TreeNode node;
+};
+
 struct Context {
 	struct Task *task;
 	struct Event event;
 };
 
 void update_record(struct Record *record, struct Event *event);
-int compTraceNodeResolved(struct TreeNode *src, struct TreeNode *root);
-int compTraceNodeRaw(struct TreeNode *src, struct TreeNode *root);
 
-struct TraceNode* get_tracepoint(struct TraceNode **root, char *callsite);
-struct TraceNode* insert_tracepoint(struct TraceNode **root, struct TraceNode *src);
-struct TraceNode* get_or_new_tracepoint(struct TraceNode **root, char *callsite);
-
-struct TraceNode* get_tracepoint_raw(struct TraceNode **root, unsigned long long callsite);
-struct TraceNode* insert_tracepoint_raw(struct TraceNode **root, struct TraceNode *src);
-struct TraceNode* get_or_new_tracepoint_raw(struct TraceNode **root, unsigned long long callsite);
+struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
+struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);
+struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *callsite, unsigned long addr);
 
 int compTask(const void *lht, const void *rht);
 int hashTask(const void *task);
