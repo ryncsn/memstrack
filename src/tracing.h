@@ -9,12 +9,19 @@ extern struct HashMap TaskMap;
 
 struct Record {
 	unsigned int bytes_req;
+	unsigned int bytes_req_peak;
 	unsigned int bytes_alloc;
+	unsigned int bytes_alloc_peak;
 	unsigned int pages_alloc;
+	unsigned int pages_alloc_peak;
 };
 
 struct TraceNode {
-	struct TraceNode *parent;
+	union {
+		struct TraceNode *parent;
+		struct TraceNode *parent_callsite;
+		struct TraceNode *parent_task;
+	};
 	union {
 		struct Callsite *child_callsites;
 		struct Task *child_tasks;
@@ -50,15 +57,10 @@ struct Event {
 };
 
 struct PageRecord {
-	unsigned long long pfn;
-	int order;
-
 	struct TraceNode *tracenode;
-
-	struct TreeNode node;
 };
 
-struct PtrRecord {
+struct AllocRecord {
 	unsigned long long addr;
 	int bytes_req;
 	int bytes_alloc;
@@ -78,6 +80,9 @@ void update_record(struct Record *record, struct Event *event);
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);
 struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *callsite, unsigned long addr);
+
+void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc);
+void record_mem_free(unsigned long addr);
 
 int compTask(const void *lht, const void *rht);
 int hashTask(const void *task);

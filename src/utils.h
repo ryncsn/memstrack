@@ -33,11 +33,16 @@ struct TreeNode* get_tree_node(
 		int (*comp)(struct TreeNode *src, struct TreeNode *root));
 
 
-struct TreeNode* insert_tree_node(
+struct TreeNode* get_remove_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,
 		int (*comp)(struct TreeNode *src, struct TreeNode *root));
 
+
+struct TreeNode* insert_tree_node(
+		struct TreeNode **root_p,
+		struct TreeNode *src,
+		int (*comp)(struct TreeNode *src, struct TreeNode *root));
 
 void iter_tree_node(
 		struct TreeNode *root,

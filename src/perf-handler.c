@@ -29,7 +29,7 @@ const unsigned char* __process_common(struct PerfEvent *perf_event, const unsign
 	return header;
 }
 
-static void __process_stacktrace(struct perf_sample_callchain *callchain, void *blob) {
+static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *callchain, void *blob) {
 	struct TraceNode *tp = NULL;
 	struct Context *context = (struct Context*)blob;
 	for (int i = 1; i <= (int)callchain->nr; i++) {
@@ -49,10 +49,24 @@ static void __process_stacktrace(struct perf_sample_callchain *callchain, void *
 		}
 		update_record(&tp->record, &context->event);
 	}
+	return tp;
 }
 
 int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
 	perf_event->counter++;
+	return 0;
+}
+
+int perf_handle_kmem_cache_free(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+	struct perf_sample_fix *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+	struct perf_raw_kmem_cache_free *raw_data;
+
+	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
+
+	record_mem_free(raw_data->ptr);
+
 	return 0;
 }
 
@@ -71,7 +85,8 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 	context->event.bytes_alloc = raw_data->bytes_alloc;
 	context->event.pages_alloc = 0;
 
-	__process_stacktrace(callchain, context);
+	struct TraceNode *tn = __process_stacktrace(callchain, context);
+	record_mem_alloc(tn, raw_data->ptr, raw_data->bytes_req, raw_data->bytes_alloc);
 
 	return 0;
 }
@@ -136,7 +151,7 @@ SampleHandler PERF_EVENTS_HANDLERS[] = {
 	perf_handle_mm_page_alloc,
 	perf_handle_nothing,
 	perf_handle_kmem_cache_alloc,
-	perf_handle_nothing,
+	perf_handle_kmem_cache_free,
 };
 
 int *PERF_EVENTS_ENABLE[] = {

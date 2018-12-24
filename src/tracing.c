@@ -15,6 +15,8 @@ struct HashMap TaskMap = {
 };
 
 char* PidMap[65535];
+struct PageRecord *page_bitmap;
+struct TreeNode *alloc_record_root;
 
 static struct Symbol {
 	unsigned long long addr;
@@ -53,6 +55,15 @@ void update_record(struct Record *record, struct Event *event) {
 	record->bytes_req += event->bytes_req;
 	record->bytes_alloc += event->bytes_alloc;
 	record->pages_alloc += event->pages_alloc;
+	if (record->bytes_req > record->bytes_req_peak) {
+		record->bytes_req_peak = record->bytes_req;
+	}
+	if (record->bytes_alloc > record->bytes_alloc_peak) {
+		record->bytes_alloc_peak = record->bytes_alloc;
+	}
+	if (record->pages_alloc > record->pages_alloc_peak) {
+		record->pages_alloc_peak = record->pages_alloc;
+	}
 }
 
 static int compCallsiteResolved(struct TreeNode *src, struct TreeNode *root) {
@@ -127,6 +138,40 @@ struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *symbol,
 		insert_child_callsite(root, callsite);
 	}
 	return callsite;
+}
+
+static int compAllocRerord(struct TreeNode *src, struct TreeNode *root) {
+	struct AllocRecord *src_data = get_node_data(src, struct AllocRecord, node);
+	struct AllocRecord *root_data = get_node_data(root, struct AllocRecord, node);
+	return src_data->addr - root_data->addr;
+}
+
+void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc) {
+	struct AllocRecord *rec = calloc(1, sizeof(struct AllocRecord));
+	rec->addr = addr;
+	rec->bytes_alloc = bytes_alloc;
+	rec->bytes_req = bytes_req;
+	rec->tracenode = root;
+	insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
+}
+
+void record_mem_free(unsigned long addr) {
+	struct AllocRecord tmp;
+	tmp.addr = addr;
+	struct TreeNode *record_node = get_remove_tree_node(&alloc_record_root, &tmp.node, compAllocRerord);
+	if (!record_node) {
+		return;
+	}
+	struct AllocRecord *rec = get_node_data(
+			record_node,
+			struct AllocRecord,
+			node);
+	struct TraceNode *tracenode = rec->tracenode;
+	while (tracenode) {
+		tracenode->record.bytes_alloc -= rec->bytes_alloc;
+		tracenode->record.bytes_req -= rec->bytes_req;
+		tracenode = tracenode->parent;
+	}
 }
 
 int compTask(const void *lht, const void *rht) {
@@ -320,7 +365,6 @@ void print_task(struct Task* task) {
 	log_info("  \"callsites\": {\n");
 	if(to_tracenode(task)->child_callsites) {
 		struct TreeNode **nodes;
-		log_info("Called1\n");
 		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
 			print_callsite(nodes[i], &marker);
