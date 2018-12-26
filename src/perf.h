@@ -138,6 +138,28 @@ struct perf_raw_mm_page_alloc {
 	uint8_t _reserved[8];
 };
 
+struct perf_raw_mm_page_zone_locked {
+	/*
+	 * field:unsigned short common_type;       offset:0;       size:2; signed:0;
+	 * field:unsigned char common_flags;       offset:2;       size:1; signed:0;
+	 * field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;
+	 * field:int common_pid;   offset:4;       size:4; signed:1;
+
+	 * field:unsigned long pfn;        offset:8;       size:8; signed:0;
+	 * field:unsigned int order;       offset:16;      size:4; signed:0;
+	 * field:int migratetype;  offset:20;      size:4; signed:1;
+	 */
+	uint16_t common_type;
+	uint8_t common_flag;
+	uint8_t common_preempt_count;
+	int32_t common_pid;
+
+	uint64_t pfn;
+	uint32_t order;
+	int32_t migratetype;
+
+	uint8_t _reserved[8];
+};
 
 struct perf_raw_mm_page_free {
 	/*
@@ -210,6 +232,55 @@ struct perf_raw_kmem_cache_free {
 	uint8_t _reserved[8];
 };
 
+struct perf_raw_kmalloc {
+	/*
+	 * field:unsigned short common_type;       offset:0;       size:2; signed:0;
+         * field:unsigned char common_flags;       offset:2;       size:1; signed:0;
+         * field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;
+         * field:int common_pid;   offset:4;       size:4; signed:1;
+
+         * field:unsigned long call_site;  offset:8;       size:8; signed:0;
+         * field:const void * ptr; offset:16;      size:8; signed:0;
+         * field:size_t bytes_req; offset:24;      size:8; signed:0;
+         * field:size_t bytes_alloc;       offset:32;      size:8; signed:0;
+         * field:gfp_t gfp_flags;  offset:40;      size:4; signed:0;
+	 */
+
+	uint16_t common_type;
+	uint8_t common_flag;
+	uint8_t common_preempt_count;
+	int32_t common_pid;
+
+	uint64_t call_site;
+	uint64_t ptr;
+	uint64_t bytes_req;
+	uint64_t bytes_alloc;
+	uint32_t gfp_flags;
+
+	uint8_t _reserved[8];
+};
+
+struct perf_raw_kfree {
+	/*
+         * field:unsigned short common_type;       offset:0;       size:2; signed:0;
+         * field:unsigned char common_flags;       offset:2;       size:1; signed:0;
+         * field:unsigned char common_preempt_count;       offset:3;       size:1; signed:0;
+         * field:int common_pid;   offset:4;       size:4; signed:1;
+
+         * field:unsigned long call_site;  offset:8;       size:8; signed:0;
+         * field:const void * ptr; offset:16;      size:8; signed:0;
+	 */
+
+	uint16_t common_type;
+	uint8_t common_flag;
+	uint8_t common_preempt_count;
+	int32_t common_pid;
+
+	uint64_t call_site;
+	uint64_t ptr;
+
+	uint8_t _reserved[8];
+};
 
 int get_perf_cpu_num();
 unsigned int get_perf_event_id(const char*);

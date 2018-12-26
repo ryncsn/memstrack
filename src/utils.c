@@ -155,6 +155,9 @@ struct TreeNode* insert_tree_node(
 	if (*root_p == NULL) {
 		return *root_p = src;
 	} else {
+		if (get_tree_node(root_p, src, *comp)) {
+			return NULL;
+		}
 		struct TreeNode *root = *root_p;
 		int result = comp(src, root);
 		if (result == 0) {

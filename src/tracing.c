@@ -1,8 +1,10 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "memory-tracer.h"
 #include "tracing.h"
 
@@ -119,8 +121,6 @@ struct Callsite* insert_child_callsite(struct TraceNode *tnode, struct Callsite 
 	}
 
 	tnode->child_callsites = get_node_data(tree_node, struct Callsite, node);
-
-	assert(get_node_data(ret_node, struct Callsite, node) == src);
 	return src;
 }
 
@@ -152,7 +152,9 @@ void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int b
 	rec->bytes_alloc = bytes_alloc;
 	rec->bytes_req = bytes_req;
 	rec->tracenode = root;
-	insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
+	if (!get_tree_node(&alloc_record_root, &rec->node, compAllocRerord)) {
+		insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
+	}
 }
 
 void record_mem_free(unsigned long addr) {
@@ -302,7 +304,12 @@ void collect_tree_node(struct TreeNode* tnode, void *blob) {
 static int comp_callsite_mem(const void *x, const void *y) {
 	struct Callsite *x_n = get_node_data(*(struct TreeNode**)x, struct Callsite, node);
 	struct Callsite *y_n = get_node_data(*(struct TreeNode**)y, struct Callsite, node);
-	return to_tracenode(x_n)->record.pages_alloc < to_tracenode(y_n)->record.pages_alloc;
+	unsigned long x_mem, y_mem;
+	x_mem = to_tracenode(x_n)->record.pages_alloc * getpagesize();
+	x_mem += to_tracenode(x_n)->record.bytes_alloc;
+	y_mem = to_tracenode(y_n)->record.pages_alloc * getpagesize();
+	y_mem += to_tracenode(y_n)->record.bytes_alloc;
+	return x_mem - y_mem;
 }
 
 struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
@@ -376,7 +383,15 @@ void print_task(struct Task* task) {
 }
 
 int comp_task_mem(const void *x, const void *y) {
-	return to_tracenode(*(struct Task**)x)->record.pages_alloc < to_tracenode(*(struct Task**)y)->record.pages_alloc;
+	struct Task *x_t = *(struct Task**)x;
+	struct Task *y_t = *(struct Task**)y;
+	unsigned long x_mem, y_mem;
+	x_mem = to_tracenode(x_t)->record.pages_alloc * getpagesize();
+	x_mem += to_tracenode(x_t)->record.bytes_alloc;
+	y_mem = to_tracenode(y_t)->record.pages_alloc * getpagesize();
+	y_mem += to_tracenode(y_t)->record.bytes_alloc;
+
+	return x_mem - y_mem;
 }
 
 struct Task **sort_tasks(struct HashMap *map) {
