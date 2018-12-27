@@ -66,14 +66,13 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 	memset(&attr, 0, sizeof(struct perf_event_attr));
 	attr.size = sizeof(struct perf_event_attr);
 	attr.type = PERF_TYPE_TRACEPOINT;
-	attr.sample_period = 32;
+	attr.sample_period = 1;
 	attr.sample_type = SAMPLE_CONFIG_FLAG;
 
 	attr.disabled = 1;
 	attr.exclude_callchain_user = 1;
 	attr.exclude_callchain_kernel = 0;
 	attr.config = perf_event->event_id;
-	attr.precise_ip = 2;
 
 	mmap_size = (CPU_BUFSIZE + 1) * getpagesize();
 
@@ -186,27 +185,33 @@ int perf_event_process(struct PerfEvent *perf_event, void *blob) {
 	while (meta->data_tail != meta->data_head) {
 		data = perf_event->data + perf_event->index;
 		header = (struct perf_event_header*)data;
-		switch (header->type) {
-			case PERF_RECORD_SAMPLE:
-				if (perf_event->sample_handler) {
-					perf_event->sample_handler(perf_event, data, blob);
-				} else {
-					perf_handle_sample(perf_event, data, blob);
-				}
-				break;
-			case PERF_RECORD_LOST:
-				perf_handle_lost_event(data);
-				break;
-				// case PERF_RECORD_MMAP:
-				// case PERF_RECORD_FORK:
-				// case PERF_RECORD_COMM:
-				// case PERF_RECORD_EXIT:
-				// case PERF_RECORD_THROTTLE:
-				// case PERF_RECORD_UNTHROTTLE:
-			default:
-				log_warn("Unexpected event type %x!\n", header->type);
-				break;
+
+		if (perf_event->index + sizeof(struct perf_event_header) < perf_event->data_size &&
+				(perf_event->index + header->size) <= perf_event->data_size) {
+			// FIXME: Droping overlapping event, causing tiny accuracy drop
+			switch (header->type) {
+				case PERF_RECORD_SAMPLE:
+					if (perf_event->sample_handler) {
+						perf_event->sample_handler(perf_event, data, blob);
+					} else {
+						perf_handle_sample(perf_event, data, blob);
+					}
+					break;
+				case PERF_RECORD_LOST:
+					perf_handle_lost_event(data);
+					break;
+					// case PERF_RECORD_MMAP:
+					// case PERF_RECORD_FORK:
+					// case PERF_RECORD_COMM:
+					// case PERF_RECORD_EXIT:
+					// case PERF_RECORD_THROTTLE:
+					// case PERF_RECORD_UNTHROTTLE:
+				default:
+					log_warn("Unexpected event type %x!\n", header->type);
+					break;
+			}
 		}
+
 		meta->data_tail += header->size;
 		perf_event->index += header->size;
 		while (perf_event->index >= perf_event->data_size) {

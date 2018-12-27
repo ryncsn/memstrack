@@ -68,15 +68,21 @@ void update_record(struct Record *record, struct Event *event) {
 	}
 }
 
-static int compCallsiteResolved(struct TreeNode *src, struct TreeNode *root) {
-	struct Callsite *src_data = get_node_data(src, struct Callsite, node);
-	struct Callsite *root_data = get_node_data(root, struct Callsite, node);
-	return strcmp(src_data->symbol, root_data->symbol);
+static int is_trivial_record(struct Record *record) {
+	if (
+			record->bytes_req == 0 ||
+			record->bytes_alloc == 0 ||
+			record->pages_alloc == 0
+	   ) {
+		return 1;
+	}
+	return 0;
 }
 
-static int compCallsiteRaw(struct TreeNode *src, struct TreeNode *root) {
+static int compCallsite(struct TreeNode *src, struct TreeNode *root) {
 	struct Callsite *src_data = get_node_data(src, struct Callsite, node);
 	struct Callsite *root_data = get_node_data(root, struct Callsite, node);
+	// TODO: Fix if symbol only available on one node
 	return src_data->addr - root_data->addr;
 }
 
@@ -91,11 +97,7 @@ struct Callsite* get_child_callsite(struct TraceNode *tnode, char *symbol, unsig
 	tmp.symbol = symbol;
 	tmp.addr = addr;
 
-	if (symbol) {
-		ret_node = get_tree_node(&tree_node, &tmp.node, compCallsiteResolved);
-	} else {
-		ret_node = get_tree_node(&tree_node, &tmp.node, compCallsiteRaw);
-	}
+	ret_node = get_tree_node(&tree_node, &tmp.node, compCallsite);
 
 	tnode->child_callsites = get_node_data(tree_node, struct Callsite, node);
 
@@ -114,11 +116,7 @@ struct Callsite* insert_child_callsite(struct TraceNode *tnode, struct Callsite 
 
 	struct TreeNode *tree_node = &tnode->child_callsites->node, *ret_node = NULL;
 
-	if (src->symbol) {
-		ret_node = insert_tree_node(&tree_node, &src->node, compCallsiteResolved);
-	} else {
-		ret_node = insert_tree_node(&tree_node, &src->node, compCallsiteRaw);
-	}
+	ret_node = insert_tree_node(&tree_node, &src->node, compCallsite);
 
 	tnode->child_callsites = get_node_data(tree_node, struct Callsite, node);
 	return src;
@@ -138,6 +136,21 @@ struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *symbol,
 		insert_child_callsite(root, callsite);
 	}
 	return callsite;
+}
+
+void free_callsite(struct TraceNode* tracenode) {
+	struct TraceNode *parent = tracenode->parent;
+	struct TreeNode *tree_root = &parent->child_callsites->node;
+	struct Callsite *callsite = get_node_data(get_remove_tree_node(&tree_root, &to_callsite(tracenode)->node, compCallsite),
+			struct Callsite,
+			node);
+	printf("Freeed %llx!\n", callsite);
+	free(callsite);
+	if (tree_root == NULL) {
+		parent->child_callsites = NULL;
+	} else {
+		parent->child_callsites = get_node_data(tree_root, struct Callsite, node);
+	}
 }
 
 static int compAllocRerord(struct TreeNode *src, struct TreeNode *root) {
@@ -172,8 +185,15 @@ void record_mem_free(unsigned long addr) {
 	while (tracenode) {
 		tracenode->record.bytes_alloc -= rec->bytes_alloc;
 		tracenode->record.bytes_req -= rec->bytes_req;
-		tracenode = tracenode->parent;
+		if (tracenode->parent && is_trivial_record(&tracenode->record)) {
+			struct TraceNode *parent = tracenode->parent;
+			free_callsite(tracenode);
+			tracenode = parent;
+		} else {
+			tracenode = tracenode->parent;
+		}
 	}
+	free(rec);
 }
 
 int compTask(const void *lht, const void *rht) {
@@ -185,7 +205,7 @@ int compTask(const void *lht, const void *rht) {
 }
 
 int hashTask(const void *task) {
-	return ((struct Task*)task)->pid;
+	return 65536 - ((struct Task*)task)->pid;
 }
 
 struct Task* get_task(struct HashMap *map, char* task_name, int pid) {

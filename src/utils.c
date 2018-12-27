@@ -55,6 +55,8 @@ struct TreeNode* get_tree_node(
 		if (result == 0) {
 			return *root;
 		} else if (result < 0 && (*root)->left) {
+				root = &(*root)->left;
+				continue;
 			result = comp(src, (*root)->left);
 			try_right_rotate(root);
 			if (result == 0) {
@@ -65,6 +67,8 @@ struct TreeNode* get_tree_node(
 				root = &(*root)->right;
 			}
 		} else if ((*root)->right) {
+				root = &(*root)->right;
+				continue;
 			result = comp(src, (*root)->right);
 			try_left_rotate(root);
 			if (result == 0) {
@@ -116,6 +120,8 @@ struct TreeNode* get_remove_tree_node(
 			*root = make_remove_tree_node(ret);
 			return ret;
 		} else if (result < 0 && (*root)->left) {
+				root = &(*root)->left;
+				continue;
 			result = comp(src, (*root)->left);
 			try_right_rotate(root);
 			if (result == 0) {
@@ -128,6 +134,8 @@ struct TreeNode* get_remove_tree_node(
 				root = &(*root)->right;
 			}
 		} else if ((*root)->right) {
+				root = &(*root)->right;
+				continue;
 			result = comp(src, (*root)->right);
 			try_left_rotate(root);
 			if (result == 0) {
