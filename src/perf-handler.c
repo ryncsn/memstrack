@@ -35,11 +35,10 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
-			//FIXME
-			continue;
+                       //FIXME
+                       continue;
 		}
 		if (i == 1) {
-			update_record(&to_tracenode(context->task)->record, &context->event);
 			tp = to_tracenode(
 					get_or_new_child_callsite(
 						to_tracenode(context->task),
@@ -47,8 +46,8 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 		} else {
 			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}
-		update_record(&tp->record, &context->event);
 	}
+	update_record(tp, &context->event);
 	return tp;
 }
 
@@ -124,30 +123,6 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 
 	return 0;
 }
-int perf_handle_mm_page_alloc_zone_locked(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	struct Context *context = (struct Context*)blob;
-
-	struct perf_sample_fix *body;
-	struct perf_sample_callchain *callchain;
-	struct perf_sample_raw *raw;
-	struct perf_raw_mm_page_alloc *raw_data;
-
-	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
-
-	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
-	context->event.bytes_req = 0;
-	context->event.bytes_alloc = 0;
-	context->event.pages_alloc = 1;
-
-	for (int i = 0; i < (int)raw_data->order; ++i) {
-		context->event.pages_alloc *= 2;
-	}
-
-	__process_stacktrace(callchain, context);
-
-	return 0;
-}
-
 
 int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
 	struct Context *context = (struct Context*)blob;
@@ -224,6 +199,7 @@ int *PERF_EVENTS_ENABLE[] = {
 	&memtrac_slab,
 };
 
+static struct pollfd *perf_fds;
 
 int perf_handling_init() {
 	int err = 0;
@@ -268,6 +244,8 @@ int perf_handling_init() {
 		}
 	}
 
+	perf_fds = (struct pollfd*)calloc(sizeof(struct pollfd), perf_events_num);
+
 	return 0;
 }
 
@@ -292,7 +270,6 @@ int perf_handling_start() {
 
 int perf_handling_process(struct Context* context) {
 	int err = 0, i;
-	struct pollfd *perf_fds = (struct pollfd*)calloc(sizeof(struct pollfd), perf_events_num);
 	for (i = 0; i < perf_events_num; i++) {
 		perf_fds[i].fd = perf_events[i].perf_fd;
 		perf_fds[i].events = POLLIN;

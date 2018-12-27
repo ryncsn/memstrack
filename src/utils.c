@@ -24,61 +24,22 @@ static int try_right_rotate(struct TreeNode **root) {
 	return 0;
 }
 
-static struct TreeNode* make_remove_tree_node(struct TreeNode *src) {
-	while (src) {
-		if (src->left == NULL) {
-			src = (src)->right;
-			return src;
-		} else if ((src)->right == NULL) {
-			src = (src)->left;
-			return src;
+static struct TreeNode* remove_tree_node(struct TreeNode **root) {
+	struct TreeNode *ret;
+	while (1) {
+		if ((*root)->left == NULL) {
+			ret = *root;
+			*root = (*root)->right;
+			return ret;
+		} else if ((*root)->right == NULL) {
+			ret = *root;
+			*root = (*root)->left;
+			return ret;
 		} else {
-			try_right_rotate(&src);
-			src = src->right;
-		}
-	}
-	return NULL;
-}
-
-struct TreeNode* get_tree_node(
-		struct TreeNode **root_p,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root))
-{
-	if (*root_p == NULL) {
-		return NULL;
-	}
-	struct TreeNode **root = root_p;
-	int result;
-	while (*root) {
-		result = comp(src, *root);
-		if (result == 0) {
-			return *root;
-		} else if (result < 0 && (*root)->left) {
-			result = comp(src, (*root)->left);
 			try_right_rotate(root);
-			if (result == 0) {
-				return *root;
-			} else if (result < 0) {
-				root = &(*root)->left;
-			} else {
-				root = &(*root)->right;
-			}
-		} else if ((*root)->right) {
-			result = comp(src, (*root)->right);
-			try_left_rotate(root);
-			if (result == 0) {
-				return *root;
-			} else if (result < 0) {
-				root = &(*root)->right;
-			} else {
-				root = &(*root)->left;
-			}
-		} else {
-			return NULL;
+			root = &(*root)->right;
 		}
 	}
-	return *root;
 }
 
 static int get_tree_depth(struct TreeNode *root) {
@@ -98,52 +59,86 @@ static int get_tree_depth(struct TreeNode *root) {
 	return max_depth;
 }
 
-struct TreeNode* get_remove_tree_node(
-		struct TreeNode **root_p,
+struct TreeNode* get_tree_node(
+		struct TreeNode **root,
 		struct TreeNode *src,
 		int (*comp)(struct TreeNode *src, struct TreeNode *root))
 {
-	if (*root_p == NULL) {
-		return NULL;
-	}
-	struct TreeNode **root = root_p;
-	struct TreeNode *ret;
 	int result;
 	while (*root) {
 		result = comp(src, *root);
 		if (result == 0) {
-			ret = *root;
-			*root = make_remove_tree_node(ret);
-			return ret;
-		} else if (result < 0 && (*root)->left) {
+			return *root;
+		} else if (result < 0) {
+			if (!(*root)->left) {
+				return NULL;
+			}
 			result = comp(src, (*root)->left);
 			try_right_rotate(root);
 			if (result == 0) {
-				ret = *root;
-				*root = make_remove_tree_node(ret);
-				return ret;
+				return *root;
 			} else if (result < 0) {
 				root = &(*root)->left;
 			} else {
-				root = &(*root)->right;
+				root = &(*root)->right->left;
 			}
-		} else if ((*root)->right) {
+		} else {
+			if (!(*root)->right) {
+				return NULL;
+			}
 			result = comp(src, (*root)->right);
 			try_left_rotate(root);
 			if (result == 0) {
-				ret = *root;
-				*root = make_remove_tree_node(ret);
-				return ret;
-			} else if (result < 0) {
+				return *root;
+			} else if (result > 0) {
 				root = &(*root)->right;
 			} else {
-				root = &(*root)->left;
+				root = &(*root)->left->right;
 			}
-		} else {
-			return NULL;
 		}
 	}
-	return *root;
+	return NULL;
+}
+
+struct TreeNode* get_remove_tree_node(
+		struct TreeNode **root,
+		struct TreeNode *src,
+		int (*comp)(struct TreeNode *src, struct TreeNode *root))
+{
+	int result;
+	while (*root) {
+		result = comp(src, *root);
+		if (result == 0) {
+			return remove_tree_node(root);
+		} else if (result < 0) {
+			if (!(*root)->left) {
+				return NULL;
+			}
+			result = comp(src, (*root)->left);
+			try_right_rotate(root);
+			if (result == 0) {
+				return remove_tree_node(root);
+			} else if (result < 0) {
+				root = &(*root)->left;
+			} else {
+				root = &(*root)->right->left;
+			}
+		} else {
+			if (!(*root)->right) {
+				return NULL;
+			}
+			result = comp(src, (*root)->right);
+			try_left_rotate(root);
+			if (result == 0) {
+				return remove_tree_node(root);
+			} else if (result > 0) {
+				root = &(*root)->right;
+			} else {
+				root = &(*root)->left->right;
+			}
+		}
+	}
+	return NULL;
 }
 
 
@@ -152,26 +147,29 @@ struct TreeNode* insert_tree_node(
 		struct TreeNode *src,
 		int (*comp)(struct TreeNode *src, struct TreeNode *root))
 {
-	if (*root_p == NULL) {
+	int result;
+	struct TreeNode *root = *root_p;
+	if (root == NULL) {
 		return *root_p = src;
-	} else {
-		if (get_tree_node(root_p, src, *comp)) {
-			return NULL;
-		}
-		struct TreeNode *root = *root_p;
-		int result = comp(src, root);
+	}
+	while (1) {
+		result = comp(src, root);
 		if (result == 0) {
 			return root;
 		} else if (result < 0) {
-			src->right = root;
-			src->left = NULL;
+			if (root->left) {
+				root = root->left;
+			} else {
+				return root->left = src;
+			}
 		} else {
-			src->left = root;
-			src->right = NULL;
+			if (root->right) {
+				root = root->right;
+			} else {
+				return root->right = src;
+			}
 		}
-		*root_p = src;
 	}
-	return src;
 }
 
 void iter_tree_node(

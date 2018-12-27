@@ -26,7 +26,7 @@ struct TraceNode {
 		struct Callsite *child_callsites;
 		struct Task *child_tasks;
 	};
-	struct Record record;
+	struct Record *record;
 };
 
 struct Callsite {
@@ -75,7 +75,7 @@ struct Context {
 	struct Event event;
 };
 
-void update_record(struct Record *record, struct Event *event);
+void update_record(struct TraceNode *record, struct Event *event);
 
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);

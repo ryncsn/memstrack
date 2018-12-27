@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <linux/perf_event.h>
 
-#define CPU_BUFSIZE 128
+#define CPU_BUFSIZE 64
 
 
 struct PerfEvent {
