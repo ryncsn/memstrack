@@ -8,12 +8,13 @@
 extern struct HashMap TaskMap;
 
 struct Record {
-	unsigned int bytes_req;
-	unsigned int bytes_req_peak;
-	unsigned int bytes_alloc;
-	unsigned int bytes_alloc_peak;
-	unsigned int pages_alloc;
-	unsigned int pages_alloc_peak;
+	int count;
+	int bytes_req;
+	int bytes_req_peak;
+	int bytes_alloc;
+	int bytes_alloc_peak;
+	int pages_alloc;
+	int pages_alloc_peak;
 };
 
 struct TraceNode {
