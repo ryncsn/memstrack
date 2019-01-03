@@ -332,7 +332,7 @@ static char* _find_symbol(unsigned long long addr) {
 
 void populate_tracenode(struct TraceNode* tracenode);
 
-void populate_callsite(struct TreeNode* treenode, void *blob) {
+static void populate_child_callsites(struct TreeNode* treenode, void *blob) {
 	struct Record *parent_record = (struct Record*)blob;
 	struct Callsite *callsite = get_node_data(treenode, struct Callsite, node);
 	populate_tracenode(to_tracenode(callsite));
@@ -344,9 +344,11 @@ void populate_callsite(struct TreeNode* treenode, void *blob) {
 void populate_tracenode(struct TraceNode* tracenode) {
 	if (tracenode->record == NULL) {
 		tracenode->record = calloc(1, sizeof(struct Record));
+	} else {
+		return;
 	}
 	if (tracenode->child_callsites) {
-		iter_tree_node(&tracenode->child_callsites->node, populate_callsite, tracenode->record);
+		iter_tree_node(&tracenode->child_callsites->node, populate_child_callsites, tracenode->record);
 	}
 }
 
