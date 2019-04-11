@@ -1,0 +1,8 @@
+### C ###
+# Prerequisites
+memory-tracer
+
+*.o
+*.swp
+*.out
+*.so
