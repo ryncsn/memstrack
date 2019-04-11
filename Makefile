@@ -1,3 +1,12 @@
+prefix ?= /usr
+libdir ?= ${prefix}/lib
+datadir ?= ${prefix}/share
+pkglibdir ?= ${libdir}/dracut
+sysconfdir ?= ${prefix}/etc
+bindir ?= ${prefix}/bin
+mandir ?= ${prefix}/share/man
+dracutlibdir ?= ${prefix}/lib/dracut
+
 CC = gcc
 CFLAGS = -std=c11 -g -O2
 MEMORY_TRACER_OBJ = src/memory-tracer.o src/tracing.o src/utils.o src/perf.o src/perf-handler.o src/ftrace.o src/ftrace-handler.o
@@ -18,3 +27,17 @@ memory-tracer: $(MEMORY_TRACER_OBJ)
 .PHONY: clean
 clean:
 	rm -f $(MEMORY_TRACER_OBJ) memory-tracer
+
+install: all
+	mkdir -p $(DESTDIR)$(pkglibdir)
+	mkdir -p $(DESTDIR)$(bindir)
+	mkdir -p $(DESTDIR)$(sysconfdir)
+	mkdir -p $(DESTDIR)$(pkglibdir)/modules.d
+	mkdir -p $(DESTDIR)$(mandir)/man1 $(DESTDIR)$(mandir)/man5 $(DESTDIR)$(mandir)/man7 $(DESTDIR)$(mandir)/man8
+	install -m 0755 memory-tracer $(DESTDIR)$(bindir)/memory-tracer
+
+dracut-module-install:
+	mkdir -p $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer
+	cp misc/99memory-tracer/module-setup.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/module-setup.sh
+	cp misc/99memory-tracer/start-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/start-tracing.sh
+	cp misc/99memory-tracer/stop-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/stop-tracing.sh

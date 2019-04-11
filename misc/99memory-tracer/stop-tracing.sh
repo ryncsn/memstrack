@@ -1,4 +1,4 @@
-#/bin/sh
+#!/bin/sh
 
 get_pid_of_tracer () {
     local _user _pid _rest
