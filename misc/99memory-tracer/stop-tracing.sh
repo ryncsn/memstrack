@@ -2,7 +2,7 @@
 
 get_pid_of_tracer () {
     local _user _pid _rest
-    read _user _pid _rest <<< $(ps aux | grep memory-tracer | head -1)
+    read _user _pid _rest <<< $(ps aux | grep [m]emory-tracer | head -1)
     echo $_pid
 }
 

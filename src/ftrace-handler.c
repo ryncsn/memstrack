@@ -53,7 +53,7 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
 	}
 
-	update_record(&tp->record, &context->event);
+	update_record(tp, &context->event);
 
 	free(callsite);
 	return tp;
@@ -94,7 +94,7 @@ int ftrace_handle_mm_page_alloc(struct Context *context) {
 		context->event.pages_alloc *= 2;
 	}
 
-	update_record(&to_tracenode(context->task)->record, &context->event);
+	update_record(to_tracenode(context->task), &context->event);
 	return 0;
 }
 
@@ -113,7 +113,7 @@ int ftrace_handle_kmem_cache_alloc(struct Context *context) {
 		sscanf(bytes_req_arg, "%llx", &ptr);
 	}
 
-	update_record(&to_tracenode(context->task)->record, &context->event);
+	update_record(to_tracenode(context->task), &context->event);
 	return 0;
 }
 
