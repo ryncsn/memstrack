@@ -378,7 +378,7 @@ static int comp_callsite_mem(const void *x, const void *y) {
 	}
 }
 
-struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
+static struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
 	struct TreeNode **callsites, **tail;
 	int count = 0;
 	iter_tree_node(root, count_tree_node, &count);
@@ -388,67 +388,7 @@ struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
 	return callsites;
 }
 
-void print_callsite(struct TreeNode* tnode, void *blob) {
-	struct json_marker *current = (struct json_marker*)blob;
-	struct json_marker next = {current->indent + 2, 0};
-
-	char padding[512] = {0};
-	struct Callsite *callsite = get_node_data(tnode, struct Callsite, node);
-	for (int i = 0; i < current->indent + 1; ++i) {
-		padding[i] = ' ';
-	}
-	if(current->count) {
-		log_info(",\n");
-	}
-	if (callsite->symbol) {
-		log_info("%s\"%s\": ", padding, callsite->symbol);
-	} else if (callsite->addr) {
-		log_info("%s\"%s\": ", padding, _find_symbol(callsite->addr));
-	} else {
-		log_info("%s\"unknown\": ", padding);
-	}
-	log_info("{\n");
-	log_info("%s \"cache_alloc\": %d,\n", padding, to_tracenode(callsite)->record->bytes_alloc);
-	log_info("%s \"cache_req\": %d,\n", padding, to_tracenode(callsite)->record->bytes_req);
-	log_info("%s \"pages_alloc\": %d", padding, to_tracenode(callsite)->record->pages_alloc);
-	if (to_tracenode(callsite)->child_callsites) {
-		log_info(",\n%s \"callsites\": {\n", padding);
-		struct TreeNode **nodes;
-		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
-		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], &next);
-		}
-		free(nodes);
-		log_info("\n%s }\n", padding);
-	} else {
-		log_info("\n");
-	}
-	log_info("%s}", padding);
-	current->count++;
-}
-
-void print_task(struct Task* task) {
-	struct json_marker marker = {2, 0};
-	log_info(" {\n");
-	log_info("  \"task_name\": \"%s\",\n", task->task_name);
-	log_info("  \"pid\" :\"%d\",\n", task->pid);
-	log_info("  \"cache_alloc\": %d,\n", to_tracenode(task)->record->bytes_alloc);
-	log_info("  \"cache_req\": %d,\n", to_tracenode(task)->record->bytes_req);
-	log_info("  \"pages_alloc\": %d,\n", to_tracenode(task)->record->pages_alloc);
-	log_info("  \"callsites\": {\n");
-	if(to_tracenode(task)->child_callsites) {
-		struct TreeNode **nodes;
-		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
-		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], &marker);
-		}
-		free(nodes);
-	}
-	log_info("\n  }\n");
-	log_info(" },\n");
-}
-
-int comp_task_mem(const void *x, const void *y) {
+static int comp_task_mem(const void *x, const void *y) {
 	long long x_mem, y_mem, page_size = getpagesize();
 	struct Task *x_t = *(struct Task**)x;
 	struct Task *y_t = *(struct Task**)y;
@@ -461,7 +401,7 @@ int comp_task_mem(const void *x, const void *y) {
 	}
 }
 
-struct Task **sort_tasks(struct HashMap *map) {
+static struct Task **sort_tasks(struct HashMap *map) {
 	struct Task **tasks = NULL;
 	struct HashNode *node = NULL;
 	int task_count = 0;
@@ -498,12 +438,132 @@ struct Task **sort_tasks(struct HashMap *map) {
 	return tasks;
 }
 
+void print_callsite_json(struct TreeNode* tnode, void *blob) {
+	struct json_marker *current = (struct json_marker*)blob;
+	struct json_marker next = {current->indent + 2, 0};
+
+	char padding[512] = {0};
+	struct Callsite *callsite = get_node_data(tnode, struct Callsite, node);
+	for (int i = 0; i < current->indent + 1; ++i) {
+		padding[i] = ' ';
+	}
+	if(current->count) {
+		log_info(",\n");
+	}
+	if (callsite->symbol) {
+		log_info("%s\"%s\": ", padding, callsite->symbol);
+	} else if (callsite->addr) {
+		log_info("%s\"%s\": ", padding, _find_symbol(callsite->addr));
+	} else {
+		log_info("%s\"unknown\": ", padding);
+	}
+	log_info("{\n");
+	log_info("%s \"cache_alloc\": %d,\n", padding, to_tracenode(callsite)->record->bytes_alloc);
+	log_info("%s \"cache_req\": %d,\n", padding, to_tracenode(callsite)->record->bytes_req);
+	log_info("%s \"pages_alloc\": %d", padding, to_tracenode(callsite)->record->pages_alloc);
+	if (to_tracenode(callsite)->child_callsites) {
+		log_info(",\n%s \"callsites\": {\n", padding);
+		struct TreeNode **nodes;
+		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_callsite_json(nodes[i], &next);
+		}
+		free(nodes);
+		log_info("\n%s }\n", padding);
+	} else {
+		log_info("\n");
+	}
+	log_info("%s}", padding);
+	current->count++;
+}
+
+void print_task_json(struct Task* task) {
+	struct json_marker marker = {2, 0};
+	log_info(" {\n");
+	log_info("  \"task_name\": \"%s\",\n", task->task_name);
+	log_info("  \"pid\" :\"%d\",\n", task->pid);
+	log_info("  \"cache_alloc\": %d,\n", to_tracenode(task)->record->bytes_alloc);
+	log_info("  \"cache_req\": %d,\n", to_tracenode(task)->record->bytes_req);
+	log_info("  \"pages_alloc\": %d,\n", to_tracenode(task)->record->pages_alloc);
+	log_info("  \"callsites\": {\n");
+	if(to_tracenode(task)->child_callsites) {
+		struct TreeNode **nodes;
+		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_callsite_json(nodes[i], &marker);
+		}
+		free(nodes);
+	}
+	log_info("\n  }\n");
+	log_info(" },\n");
+}
+
+void print_callsite(struct TreeNode* tnode, void *blob) {
+	int current_indent = *(int*)blob;
+	int next_indent = current_indent + 2;
+
+	char* padding = calloc(current_indent + 1, sizeof(char));
+	for (int i = 0; i < current_indent; ++i) {
+		padding[i] = ' ';
+	}
+
+	struct Callsite *callsite = get_node_data(tnode, struct Callsite, node);
+	struct TraceNode *tracenode = to_tracenode(callsite);
+
+	if (callsite->symbol) {
+		log_info("%s%s", padding, callsite->symbol);
+	} else if (callsite->addr) {
+		log_info("%s%s", padding, _find_symbol(callsite->addr));
+	} else {
+		log_info("%s(unknown)", padding);
+	}
+
+	log_info(" (Alloc: %d\t Req: %d\t Pages: %d)\n",
+			tracenode->record->bytes_alloc,
+			tracenode->record->bytes_req,
+			tracenode->record->pages_alloc);
+
+	if (tracenode->child_callsites) {
+		struct TreeNode **nodes;
+		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_callsite(nodes[i], &next_indent);
+		}
+		free(nodes);
+	}
+}
+
+void print_task(struct Task* task) {
+	int indent;
+	struct TraceNode *tn = to_tracenode(task);
+	log_info("%s (Alloc: %d\t Req: %d\t Pages: %d)\n",
+			task->task_name,
+			tn->record->bytes_alloc,
+			tn->record->bytes_req,
+			tn->record->pages_alloc);
+	if (to_tracenode(task)->child_callsites) {
+		struct TreeNode **nodes;
+		indent = 2;
+		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
+		for (int i = 0; nodes[i] != NULL; i++) {
+			print_callsite(nodes[i], &indent);
+		}
+		free(nodes);
+	}
+}
+
 void print_all_tasks(struct HashMap *map) {
 	_load_kallsyms();
-	log_info("[\n");
 	struct Task **task = sort_tasks(map);
-	for (int i = 0; task[i] != NULL; i++) {
-		print_task(task[i]);
+	if (memtrac_json) {
+		log_info("[\n");
+		for (int i = 0; task[i] != NULL; i++) {
+			print_task_json(task[i]);
+		}
+		log_info("]\n");
+	} else {
+		for (int i = 0; task[i] != NULL; i++) {
+			print_task(task[i]);
+		}
 	}
-	log_info("]\n");
 }
