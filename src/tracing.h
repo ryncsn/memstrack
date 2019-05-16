@@ -52,6 +52,7 @@ struct Task {
 
 struct Event {
 	char *event;
+	int pfn;
 	int bytes_req;
 	int bytes_alloc;
 	int pages_alloc;

@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <linux/limits.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
@@ -10,14 +11,15 @@
 
 #define TASK_NAME_LEN_MAX 1024
 
+int page_size;
 struct HashMap TaskMap = {
 	hashTask,
 	compTask,
 	{NULL},
 };
 
-char* PidMap[65535];
-struct PageRecord *page_bitmap;
+char* pid_map[65535];
+struct PageRecord *page_map;
 struct TreeNode *alloc_record_root;
 
 static struct Symbol {
@@ -51,6 +53,11 @@ static char* get_process_name_by_pid(const int pid)
 		return NULL;
 	}
 	return name;
+}
+
+void mem_tracing_init() {
+	int total_pages = sysconf(_SC_PHYS_PAGES);
+	page_map = calloc(sizeof(struct PageRecord), total_pages);
 }
 
 void update_record(struct TraceNode *tracenode, struct Event *event) {
@@ -253,9 +260,9 @@ struct Task* insert_task(struct HashMap *map, struct Task* task) {
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 	if (task_name == NULL) {
 		// TODO: Remove Pid map entry if previous task exited
-		char *cmdline = PidMap[pid % 65535];
+		char *cmdline = pid_map[pid % 65535];
 		if (!cmdline) {
-			cmdline = PidMap[pid % 65535] = get_process_name_by_pid(pid);
+			cmdline = pid_map[pid % 65535] = get_process_name_by_pid(pid);
 		}
 		task_name = cmdline;
 	}
