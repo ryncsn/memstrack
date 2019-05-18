@@ -44,7 +44,7 @@ static char* get_process_name_by_pid(const int pid)
 			}
 			fclose(f);
 		} else {
-			log_error("Failed to retrive process name of %d\n", pid);
+			log_debug("Failed to retrive process name of %d\n", pid);
 			sprintf(name, "(%d)", pid);
 		}
 	} else {
