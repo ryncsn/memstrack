@@ -454,7 +454,7 @@ void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	for (int i = 0; i < current->indent + 1; ++i) {
 		padding[i] = ' ';
 	}
-	if(current->count) {
+	if (current->count) {
 		log_info(",\n");
 	}
 	if (callsite->symbol) {
@@ -484,7 +484,7 @@ void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	current->count++;
 }
 
-void print_task_json(struct Task* task) {
+void print_task_json(struct Task* task, int last_task) {
 	struct json_marker marker = {2, 0};
 	log_info(" {\n");
 	log_info("  \"task_name\": \"%s\",\n", task->task_name);
@@ -502,7 +502,12 @@ void print_task_json(struct Task* task) {
 		free(nodes);
 	}
 	log_info("\n  }\n");
-	log_info(" },\n");
+
+	if (last_task) {
+		log_info(" }\n");
+	} else {
+		log_info(" },\n");
+	}
 }
 
 void print_callsite(struct TreeNode* tnode, void *blob) {
@@ -565,7 +570,7 @@ void print_all_tasks(struct HashMap *map) {
 	if (memtrac_json) {
 		log_info("[\n");
 		for (int i = 0; task[i] != NULL; i++) {
-			print_task_json(task[i]);
+			print_task_json(task[i], task[i + 1] == NULL);
 		}
 		log_info("]\n");
 	} else {

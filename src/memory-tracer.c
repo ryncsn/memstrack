@@ -102,7 +102,7 @@ void display_usage() {
 	log_info("Usage: memory-tracer [OPTION]... \n");
 	log_info("    --debug		Print debug messages. \n");
 	log_info("    --ftrace		Use ftrace for tracing, poor performance but should always work. \n");
-	log_info("    --perf		Use binary perf for tracing, great performance, require CONFIG_FRAME_POINTER enabled. \n");
+	log_info("    --perf		Use binary perf for tracing, may require CONFIG_FRAME_POINTER enabled on older kernel (before 5.1). \n");
 	log_info("    --page		Collect page usage statistic. \n");
 	log_info("    --slab		Collect slab cache usage statistic. \n");
 	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M \n");

@@ -3,8 +3,8 @@ A memory allocation trace, like a hot spot analyzer for memory allocation
 
 Usage: memory-tracer [OPTION]...<br>
 &nbsp;&nbsp;--debug		Print debug messages.<br>
-&nbsp;&nbsp;--ftrace  Use ftrace for tracing, poor performance but should always work.<br>
-&nbsp;&nbsp;--perf		Use binary perf for tracing, great performance, require CONFIG_FRAME_POINTER enabled.<br>
+&nbsp;&nbsp;--ftrace		Use ftrace for tracing, poor performance but should always work.<br>
+&nbsp;&nbsp;--perf		Use binary perf for tracing, may require CONFIG_FRAME_POINTER enabled on older kernel (before 5.1).<br>
 &nbsp;&nbsp;--page		Collect page usage statistic.<br>
 &nbsp;&nbsp;--slab		Collect slab cache usage statistic.<br>
 &nbsp;&nbsp;--json		Format result as json.<br>
