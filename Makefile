@@ -36,7 +36,7 @@ install: all
 	mkdir -p $(DESTDIR)$(mandir)/man1 $(DESTDIR)$(mandir)/man5 $(DESTDIR)$(mandir)/man7 $(DESTDIR)$(mandir)/man8
 	install -m 0755 memory-tracer $(DESTDIR)$(bindir)/memory-tracer
 
-dracut-module-install:
+dracut-module-install: install
 	mkdir -p $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer
 	cp misc/99memory-tracer/module-setup.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/module-setup.sh
 	cp misc/99memory-tracer/start-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/start-tracing.sh
