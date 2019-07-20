@@ -6,6 +6,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
+#include <malloc.h>
 
 #include "perf-handler.h"
 #include "ftrace-handler.h"
@@ -114,7 +115,14 @@ void display_usage() {
 	// log_info("    			expect a number between 0 to 100. Useful to filter minor noises. \n");
 }
 
+void tune_glibc() {
+	mallopt(M_TOP_PAD, 0);
+	mallopt(M_TRIM_THRESHOLD, 0);
+}
+
 int main(int argc, char **argv) {
+	tune_glibc();
+
 	while (1) {
 		int opt;
 		int option_index = 0;
