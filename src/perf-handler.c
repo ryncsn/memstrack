@@ -172,41 +172,38 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 	return 0;
 }
 
-const char *PERF_EVENTS[] = {
-	"kmem:kmalloc",
-	"kmem:kfree",
-	"kmem:mm_page_alloc",
-	"kmem:mm_page_free",
-	"kmem:kmem_cache_alloc",
-	"kmem:kmem_cache_free",
+static int perf_tracks_page() {
+	return memtrac_page;
+}
+
+static int perf_tracks_slab() {
+	return memtrac_slab;
+}
+
+static struct perf_event_entry {
+	char *name;
+	int (*handler)(struct PerfEvent *perf_event, const unsigned char* header, void *blob);
+	int (*is_enabled)(void);
+} const perf_event_table[] = {
+	{ "kmem:kmalloc",         	perf_handle_kmalloc,         	perf_tracks_slab },
+	{ "kmem:kfree",           	perf_handle_kfree,           	perf_tracks_slab },
+	{ "kmem:mm_page_alloc",   	perf_handle_mm_page_alloc,   	perf_tracks_page },
+	{ "kmem:mm_page_free",    	perf_handle_mm_page_free,    	perf_tracks_page },
+	{ "kmem:kmem_cache_alloc",	perf_handle_kmem_cache_alloc,	perf_tracks_slab },
+	{ "kmem:kmem_cache_free", 	perf_handle_kmem_cache_free, 	perf_tracks_slab },
 };
 
-SampleHandler PERF_EVENTS_HANDLERS[] = {
-	perf_handle_kmalloc,
-	perf_handle_kfree,
-	perf_handle_mm_page_alloc,
-	perf_handle_mm_page_free,
-	perf_handle_kmem_cache_alloc,
-	perf_handle_kmem_cache_free,
-};
-
-int *PERF_EVENTS_ENABLE[] = {
-	&memtrac_slab,
-	&memtrac_slab,
-	&memtrac_page,
-	&memtrac_page,
-	&memtrac_slab,
-	&memtrac_slab,
-};
+const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_entry);
 
 static struct pollfd *perf_fds;
 
 int perf_handling_init() {
-	int err = 0;
-	const int cpu_num = get_perf_cpu_num();
-	const int event_num = sizeof(PERF_EVENTS) / sizeof(const char*);
-	for (int event = 0; event < event_num; event++){
-		if (*PERF_EVENTS_ENABLE[event]) {
+	int err;
+	int cpu_num = get_perf_cpu_num();
+	const struct perf_event_entry *event;
+
+	for (int i = 0; i < perf_event_entry_number; i++) {
+		if (perf_event_table[i].is_enabled()) {
 			perf_events_num += cpu_num;
 		}
 	}
@@ -215,24 +212,26 @@ int perf_handling_init() {
 
 	int count = 0;
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
-		for (int event = 0; event < event_num; event++){
-			if (!*PERF_EVENTS_ENABLE[event]) {
+		for (int i = 0; i < perf_event_entry_number; i++){
+			event = &perf_event_table[i];
+			if (!event->is_enabled()) {
 				continue;
 			}
-			perf_events[count].event_id = get_perf_event_id(PERF_EVENTS[event]);
-			if (perf_events[count].event_id < 0){
-				log_error("Failed to retrive event id for \'%s\', please ensure tracefs is mounted\n", PERF_EVENTS[event]);
+			perf_events[count].event_id = get_perf_event_id(event->name);
+			if (perf_events[count].event_id < 0) {
+				log_error("Failed to retrive event id for \'%s\', "
+					  "please ensure tracefs is mounted\n", event->name);
 				err = EINVAL;
 				break;
 			}
 			perf_events[count].cpu = cpu;
-			perf_events[count].event_name = (char*)malloc(strlen(PERF_EVENTS[event]) + 1);
+			perf_events[count].event_name = (char*)malloc(strlen(event->name) + 1);
 			if (perf_events[count].event_name == NULL){
 				err = ENOMEM;
 				break;
 			}
-			perf_events[count].sample_handler = PERF_EVENTS_HANDLERS[event];
-			strcpy(perf_events[count].event_name, PERF_EVENTS[event]);
+			perf_events[count].sample_handler = event->handler;
+			strcpy(perf_events[count].event_name, event->name);
 			count++;
 		}
 	}
