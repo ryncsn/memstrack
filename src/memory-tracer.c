@@ -11,6 +11,7 @@
 #include "perf-handler.h"
 #include "ftrace-handler.h"
 #include "memory-tracer.h"
+#include "proc-mem.h"
 #include "tracing.h"
 
 int memtrac_debug;
@@ -20,6 +21,7 @@ int memtrac_ftrace;
 int memtrac_json;
 int memtrac_slab;
 int memtrac_page;
+int memtrac_show_misc;
 
 char* memtrac_perf_base;
 
@@ -90,6 +92,7 @@ static struct option long_options[] =
 	{"slab",		no_argument,	&memtrac_slab,		1},
 	{"page",		no_argument,	&memtrac_page,		1},
 	{"json",		no_argument,	&memtrac_json,		1},
+	{"show-misc",		no_argument,	&memtrac_show_misc,	1},
 	{"debug",		no_argument,		0,		'd'},
 	// {"human-readable",	no_argument,		0,		'h'},
 	// {"trace-base",	required_argument,	0,		'b'},
@@ -109,6 +112,7 @@ void display_usage() {
 	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M \n");
 	log_info("    --json		Format result as json. \n");
 	// log_info("    --trace-base [DIR]	Use a different tracing mount path. \n");
+	log_info("    --show-misc	Generate a current memory usage summary report on start. \n");
 	log_info("    --help 		Print this message. \n");
 	// log_info("    --throttle-output [PERCENTAGE] \n");
 	// log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed. \n");
@@ -158,6 +162,10 @@ int main(int argc, char **argv) {
 				display_usage();
 				exit(1);
 		}
+	}
+
+	if (memtrac_show_misc) {
+		print_slab_usage();
 	}
 
 	if (memtrac_perf && memtrac_ftrace) {
