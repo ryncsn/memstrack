@@ -156,22 +156,12 @@ static int compAllocRerord(struct TreeNode *src, struct TreeNode *root) {
 	return (long)src_data->addr - (long)root_data->addr;
 }
 
-void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc) {
-	struct AllocRecord *rec = calloc(1, sizeof(struct AllocRecord));
-	rec->addr = addr;
-	rec->bytes_alloc = bytes_alloc;
-	rec->bytes_req = bytes_req;
-	rec->tracenode = root;
-	root->record->count++;
-	if (!get_tree_node(&alloc_record_root, &rec->node, compAllocRerord)) {
-		insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
-	} else {
-		free(rec);
-	}
-}
-
+/*
+ * Try to free a callsite, if it have no child and have no memory info, then free it
+ */
 static void free_callsite(struct TraceNode* tracenode) {
 	if (tracenode->record->count) {
+		// Still have memory allocated
 		return;
 	}
 	while (tracenode) {
@@ -198,6 +188,26 @@ static void free_callsite(struct TraceNode* tracenode) {
 	}
 }
 
+/*
+ * Record that a memory region is being allocated by a tracenode
+ */
+void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc) {
+	struct AllocRecord *rec = calloc(1, sizeof(struct AllocRecord));
+	rec->addr = addr;
+	rec->bytes_alloc = bytes_alloc;
+	rec->bytes_req = bytes_req;
+	rec->tracenode = root;
+	root->record->count++;
+	if (!get_tree_node(&alloc_record_root, &rec->node, compAllocRerord)) {
+		insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
+	} else {
+		free(rec);
+	}
+}
+
+/*
+ * Record that a memory region is being freed by a tracenode
+ */
 void record_mem_free(unsigned long addr) {
 	struct AllocRecord tmp;
 	tmp.addr = addr;
@@ -215,7 +225,7 @@ void record_mem_free(unsigned long addr) {
 	tracenode->record->count--;
 	if (tracenode->parent && is_trivial_tracenode(tracenode)) {
 		struct TraceNode *parent = tracenode->parent;
-		free_callsite(tracenode); // Need to count
+		free_callsite(tracenode); //TODO: Need to count
 		tracenode = parent;
 	} else {
 		tracenode = tracenode->parent;
@@ -373,7 +383,7 @@ void collect_tree_node(struct TreeNode* tnode, void *blob) {
 }
 
 static int comp_callsite_mem(const void *x, const void *y) {
-	long long x_mem, y_mem, page_size = getpagesize();
+	long long x_mem, y_mem;
 	struct Callsite *x_n = get_node_data(*(struct TreeNode**)x, struct Callsite, node);
 	struct Callsite *y_n = get_node_data(*(struct TreeNode**)y, struct Callsite, node);
 	x_mem = to_tracenode(x_n)->record->pages_alloc * page_size + to_tracenode(x_n)->record->bytes_alloc;
@@ -396,7 +406,7 @@ static struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
 }
 
 static int comp_task_mem(const void *x, const void *y) {
-	long long x_mem, y_mem, page_size = getpagesize();
+	long long x_mem, y_mem;
 	struct Task *x_t = *(struct Task**)x;
 	struct Task *y_t = *(struct Task**)y;
 	x_mem = to_tracenode(x_t)->record->pages_alloc * page_size + to_tracenode(x_t)->record->bytes_alloc;
@@ -564,18 +574,16 @@ void print_task(struct Task* task) {
 	}
 }
 
-void print_all_tasks(struct HashMap *map) {
+void generate_stack_statistic(struct HashMap *task_map, int task_limit) {
 	_load_kallsyms();
-	struct Task **task = sort_tasks(map);
-	if (memtrac_json) {
-		log_info("[\n");
-		for (int i = 0; task[i] != NULL; i++) {
-			print_task_json(task[i], task[i + 1] == NULL);
-		}
-		log_info("]\n");
-	} else {
-		for (int i = 0; task[i] != NULL; i++) {
+	struct Task **task = sort_tasks(task_map);
+	if (memtrac_json) log_info("[\n");
+	for (int i = 0; task[i] != NULL && i < task_limit; i++) {
+		if (memtrac_json) {
+			print_task_json(task[i], task[i + 1] == NULL || i + 1 == task_limit);
+		} else {
 			print_task(task[i]);
 		}
 	}
+	if (memtrac_json) log_info("]\n");
 }

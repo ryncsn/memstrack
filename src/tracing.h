@@ -94,7 +94,7 @@ struct Task* insert_task(struct HashMap *map, struct Task* task);
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
 
 void print_task(struct Task* task);
-void print_all_tasks(struct HashMap *map);
+void generate_stack_statistic(struct HashMap *map, int task_limit);
 
 #define _MEMORY_TRACER_TRACING_LIB 1
 

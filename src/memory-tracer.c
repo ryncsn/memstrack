@@ -1,3 +1,4 @@
+#define _GNU_SOURCE         /* See feature_test_macros(7) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -22,6 +23,8 @@ int memtrac_json;
 int memtrac_slab;
 int memtrac_page;
 int memtrac_show_misc;
+
+int page_size;
 
 char* memtrac_perf_base;
 
@@ -52,7 +55,7 @@ void task_map_debug() {
 	}
 }
 
-void on_exit() {
+void do_exit() {
 	if (memtrac_ftrace) {
 		ftrace_handling_clean();
 	}
@@ -62,13 +65,13 @@ void on_exit() {
 	if (memtrac_debug) {
 		task_map_debug();
 	}
-	print_all_tasks(&TaskMap);
+	generate_stack_statistic(&TaskMap, 65536);
 	exit(0);
 }
 
 void on_signal(int signal) {
 	log_debug("Exiting on signal %d\n", signal);
-	on_exit();
+	do_exit();
 }
 
 void do_process_perf() {
@@ -126,6 +129,7 @@ void tune_glibc() {
 
 int main(int argc, char **argv) {
 	tune_glibc();
+	page_size = getpagesize();
 
 	while (1) {
 		int opt;
@@ -211,5 +215,5 @@ int main(int argc, char **argv) {
 	} else if (0) {
 		// TODO
 	}
-	on_exit();
+	do_exit();
 }

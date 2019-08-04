@@ -35,8 +35,8 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
-                       //FIXME
-                       continue;
+			//FIXME
+			continue;
 		}
 		if (i == 1) {
 			tp = to_tracenode(

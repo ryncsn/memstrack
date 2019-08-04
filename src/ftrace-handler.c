@@ -48,7 +48,7 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 		tp = to_tracenode(
 				get_or_new_child_callsite(
 					to_tracenode(context->task),
-				       	callsite, 0));
+					callsite, 0));
 	} else {
 		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
 	}

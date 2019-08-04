@@ -74,10 +74,10 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 	attr.exclude_callchain_kernel = 0;
 	attr.config = perf_event->event_id;
 
-	mmap_size = (CPU_BUFSIZE + 1) * getpagesize();
+	mmap_size = (CPU_BUFSIZE + 1) * page_size;
 
 	attr.wakeup_watermark = mmap_size / 4;
-	if (attr.wakeup_watermark < (__u32)getpagesize()) {
+	if (attr.wakeup_watermark < (__u32)page_size) {
 		log_error("perf ring buffer too small!\n");
 	}
 	attr.watermark = 1;
@@ -103,9 +103,9 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 
 	perf_event->perf_fd = perf_fd;
 	perf_event->mmap_size = mmap_size;
-	perf_event->data_size = mmap_size - getpagesize();
+	perf_event->data_size = mmap_size - page_size;
 	perf_event->meta = (struct perf_event_mmap_page *)perf_mmap;
-	perf_event->data = (unsigned char *)perf_mmap + getpagesize();
+	perf_event->data = (unsigned char *)perf_mmap + page_size;
 	perf_event->index = 0;
 
 	return 0;
