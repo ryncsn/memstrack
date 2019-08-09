@@ -24,3 +24,5 @@ if ! [ -f "$trace_base/tracing/trace" ]; then
 fi
 
 memory-tracer --page --perf > /memory-debug & disown
+
+sleep 5
