@@ -52,10 +52,11 @@ struct Task {
 
 struct Event {
 	char *event;
-	int pfn;
-	int bytes_req;
-	int bytes_alloc;
-	int pages_alloc;
+	unsigned long pfn;
+	unsigned long addr;
+	unsigned long bytes_req;
+	unsigned long bytes_alloc;
+	unsigned long pages_alloc;
 };
 
 struct PageRecord {
@@ -64,8 +65,7 @@ struct PageRecord {
 
 struct AllocRecord {
 	unsigned long long addr;
-	int bytes_req;
-	int bytes_alloc;
+	unsigned long size;
 
 	struct TraceNode *tracenode;
 
@@ -77,14 +77,15 @@ struct Context {
 	struct Event event;
 };
 
+void mem_tracing_init();
 void update_record(struct TraceNode *record, struct Event *event);
 
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);
 struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *callsite, unsigned long addr);
 
-void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc);
-void record_mem_free(unsigned long addr);
+void record_page_alloc(struct TraceNode *root, unsigned long addr, unsigned long order);
+void record_page_free(unsigned long pfn, unsigned long num);
 
 int compTask(const void *lht, const void *rht);
 int hashTask(const void *task);

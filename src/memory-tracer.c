@@ -130,6 +130,7 @@ void tune_glibc() {
 int main(int argc, char **argv) {
 	tune_glibc();
 	page_size = getpagesize();
+	mem_tracing_init();
 
 	while (1) {
 		int opt;

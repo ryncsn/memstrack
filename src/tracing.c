@@ -18,9 +18,8 @@ struct HashMap TaskMap = {
 	{NULL},
 };
 
-char* pid_map[65535];
+char *pid_map[65535];
 struct PageRecord *page_map;
-struct TreeNode *alloc_record_root;
 
 static struct Symbol {
 	unsigned long long addr;
@@ -57,6 +56,7 @@ static char* get_process_name_by_pid(const int pid)
 
 void mem_tracing_init() {
 	int total_pages = sysconf(_SC_PHYS_PAGES);
+
 	page_map = calloc(sizeof(struct PageRecord), total_pages);
 }
 
@@ -190,39 +190,25 @@ static void free_callsite(struct TraceNode* tracenode) {
 
 /*
  * Record that a memory region is being allocated by a tracenode
+ * Should only be called against top of the stack
  */
-void record_mem_alloc(struct TraceNode *root, unsigned long addr, unsigned int bytes_req, unsigned int bytes_alloc) {
-	struct AllocRecord *rec = calloc(1, sizeof(struct AllocRecord));
-	rec->addr = addr;
-	rec->bytes_alloc = bytes_alloc;
-	rec->bytes_req = bytes_req;
-	rec->tracenode = root;
-	root->record->count++;
-	if (!get_tree_node(&alloc_record_root, &rec->node, compAllocRerord)) {
-		insert_tree_node(&alloc_record_root, &rec->node, compAllocRerord);
-	} else {
-		free(rec);
+void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long num) {
+	while (num--) {
+		page_map[pfn].tracenode = root;
 	}
 }
 
 /*
- * Record that a memory region is being freed by a tracenode
+ * Record that pages is being freed by a tracenode
+ * Should only be called against top of the stack
  */
-void record_mem_free(unsigned long addr) {
-	struct AllocRecord tmp;
-	tmp.addr = addr;
-	struct TreeNode *record_node = get_remove_tree_node(&alloc_record_root, &tmp.node, compAllocRerord);
-	if (!record_node) {
-		return;
+void record_page_free(unsigned long pfn, unsigned long num) {
+	struct TraceNode *tracenode = page_map[pfn].tracenode;
+
+	while (num--) {
+		page_map[pfn].tracenode = NULL;
 	}
-	struct AllocRecord *rec = get_node_data(
-			record_node,
-			struct AllocRecord,
-			node);
-	struct TraceNode *tracenode = rec->tracenode;
-	tracenode->record->bytes_alloc -= rec->bytes_alloc;
-	tracenode->record->bytes_req -= rec->bytes_req;
-	tracenode->record->count--;
+
 	if (tracenode->parent && is_trivial_tracenode(tracenode)) {
 		struct TraceNode *parent = tracenode->parent;
 		free_callsite(tracenode); //TODO: Need to count
@@ -230,7 +216,6 @@ void record_mem_free(unsigned long addr) {
 	} else {
 		tracenode = tracenode->parent;
 	}
-	free(rec);
 }
 
 int compTask(const void *lht, const void *rht) {

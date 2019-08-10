@@ -7,6 +7,7 @@
 #include "ftrace.h"
 
 #define MAX_LINE 4096
+#define MAX_SYMBOL 4096
 
 static FILE* ftrace_file;
 // For ftrace
@@ -33,11 +34,10 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 	}
 
 	struct TraceNode *tp = NULL;
-	char *callsite = NULL, *callsite_arg = NULL;
+	char callsite[MAX_SYMBOL], *callsite_arg = NULL;
 	int callsite_len = 0;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
 	callsite_len = strlen(callsite_arg);
-	callsite = (char*)malloc(callsite_len + 1);
 	strcpy(callsite, callsite_arg);
 	callsite[callsite_len - 1] = '\0';
 
@@ -55,7 +55,6 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 
 	update_record(tp, &context->event);
 
-	free(callsite);
 	return tp;
 }
 
@@ -145,7 +144,14 @@ int ftrace_handling_process(struct Context *context) {
 				log_debug("Got unexpected stacktrace!\n");
 				__ignore_stacktrace();
 			} else {
-				__process_stacktrace(context);
+				if (context->event.pages_alloc > 0) {
+					record_page_alloc(__process_stacktrace(context),
+							context->event.pfn,
+							context->event.pages_alloc);
+				} else if (context->event.pages_alloc < 0) {
+					record_page_free(context->event.pfn,
+							-context->event.pages_alloc);
+				}
 				context->task = NULL;
 			}
 		} else {

@@ -42,11 +42,16 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 			tp = to_tracenode(
 					get_or_new_child_callsite(
 						to_tracenode(context->task),
-					       	NULL, addr));
+						NULL, addr));
+			if (context->event.pages_alloc > 0)
+				record_page_alloc(tp, context->event.pfn, context->event.pages_alloc);
+			else if (context->event.pages_alloc < 0)
+				record_page_free( context->event.pfn, -context->event.pages_alloc);
 		} else {
 			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}
 	}
+
 	update_record(tp, &context->event);
 	return tp;
 }
@@ -63,8 +68,6 @@ int perf_handle_kfree(struct PerfEvent *perf_event, const unsigned char* header,
 	struct perf_raw_kfree *raw_data;
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
-
-	record_mem_free(raw_data->ptr);
 
 	return 0;
 }
@@ -84,9 +87,6 @@ int perf_handle_kmalloc(struct PerfEvent *perf_event, const unsigned char* heade
 	context->event.bytes_alloc = raw_data->bytes_alloc;
 	context->event.pages_alloc = 0;
 
-	struct TraceNode *tn = __process_stacktrace(callchain, context);
-	record_mem_alloc(tn, raw_data->ptr, raw_data->bytes_req, raw_data->bytes_alloc);
-
 	return 0;
 }
 
@@ -97,8 +97,6 @@ int perf_handle_kmem_cache_free(struct PerfEvent *perf_event, const unsigned cha
 	struct perf_raw_kmem_cache_free *raw_data;
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
-
-	record_mem_free(raw_data->ptr);
 
 	return 0;
 }
@@ -114,12 +112,10 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
 	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
+	context->event.addr = raw_data->ptr;
 	context->event.bytes_req = raw_data->bytes_req;
 	context->event.bytes_alloc = raw_data->bytes_alloc;
 	context->event.pages_alloc = 0;
-
-	struct TraceNode *tn = __process_stacktrace(callchain, context);
-	record_mem_alloc(tn, raw_data->ptr, raw_data->bytes_req, raw_data->bytes_alloc);
 
 	return 0;
 }
@@ -138,6 +134,8 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 	context->event.bytes_req = 0;
 	context->event.bytes_alloc = 0;
 	context->event.pages_alloc = 1;
+	context->event.pfn = raw_data->pfn;
+	// context->event.addr = 0;
 
 	for (int i = 0; i < (int)raw_data->order; ++i) {
 		context->event.pages_alloc *= 2;
@@ -162,6 +160,7 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 	context->event.bytes_req = 0;
 	context->event.bytes_alloc = 0;
 	context->event.pages_alloc = -1;
+	context->event.pfn = raw_data->pfn;
 
 	for (int i = 0; i < (int)raw_data->order; ++i) {
 		context->event.pages_alloc *= 2;
