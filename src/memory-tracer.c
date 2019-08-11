@@ -12,8 +12,8 @@
 #include "perf-handler.h"
 #include "ftrace-handler.h"
 #include "memory-tracer.h"
-#include "proc-mem.h"
 #include "tracing.h"
+#include "proc.h"
 
 int memtrac_debug;
 int memtrac_human;

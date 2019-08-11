@@ -43,10 +43,11 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 					get_or_new_child_callsite(
 						to_tracenode(context->task),
 						NULL, addr));
-			if (context->event.pages_alloc > 0)
+			if (context->event.pages_alloc > 0) {
 				record_page_alloc(tp, context->event.pfn, context->event.pages_alloc);
-			else if (context->event.pages_alloc < 0)
-				record_page_free( context->event.pfn, -context->event.pages_alloc);
+			} else if (context->event.pages_alloc < 0) {
+				record_page_free(context->event.pfn, -context->event.pages_alloc);
+			}
 		} else {
 			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}

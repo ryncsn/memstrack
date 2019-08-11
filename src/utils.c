@@ -141,7 +141,6 @@ struct TreeNode* get_remove_tree_node(
 	return NULL;
 }
 
-
 struct TreeNode* insert_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,

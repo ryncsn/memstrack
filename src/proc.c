@@ -1,31 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <errno.h>
 #include <stddef.h>
 #include "memory-tracer.h"
+#include "proc.h"
 
-#define MAX_LINE 1024
-#define SLABINFO "/proc/slabinfo"
-#define SLABINFO_DEBUG_HEAD "slabinfo - version: 2.1 (statistics)\n"
-#define SLABINFO_HEAD "slabinfo - version: 2.1\n"
-#define SLAB_NAME_LEN 18
-
-// For non debug case
-struct slab_info {
-	char name[SLAB_NAME_LEN];
-	unsigned long active_objs;
-	unsigned long num_objs;
-	unsigned int objsize;
-	unsigned int objperslab;
-	unsigned int pagesperslab;
-	unsigned int limit;
-	unsigned int batchcount;
-	unsigned int sharedfactor;
-	unsigned long active_slabs;
-	unsigned long num_slabs;
-	unsigned long sharedavail;
-};
 
 static struct slab_info *slab_info_table;
 static int slab_info_size = 0, slab_info_number = 0;
@@ -40,11 +21,11 @@ static int sort_slab(const void *a, const void *b) {
 int print_slab_usage()
 {
 	FILE *file;
-	char line[MAX_LINE];
+	char line[PROC_MAX_LINE];
 	int slab_debug, total_pages, entry_number;
 	struct slab_info *entry;
 
-	file = fopen("/proc/slabinfo", "r");
+	file = fopen(SLABINFO, "r");
 	if (!file) {
 		return -EINVAL;
 	}
@@ -52,7 +33,7 @@ int print_slab_usage()
 	entry_number = 0;
 	total_pages = 0;
 
-	for (int line_number = 0; fgets(line, MAX_LINE, file); ++line_number) {
+	for (int line_number = 0; fgets(line, PROC_MAX_LINE, file); ++line_number) {
 		if (line_number == 0) {
 			if (!strncmp(line, SLABINFO_DEBUG_HEAD, sizeof(SLABINFO_DEBUG_HEAD))) {
 				slab_debug = 1;
@@ -114,14 +95,63 @@ int print_slab_usage()
 	return 0;
 }
 
+int parse_keyword(int until, FILE *file, char *buf, const char* keyword, const char *__restrict fmt, ...){
+	char *src;
+	va_list args;
+	char *read;
 
-int get_slab_usage() {
+	while (!(src = strstr(buf, keyword)) && read) {
+		read = fgets(buf, PROC_MAX_LINE, file);
+	}
+
+	if (!read) {
+		log_info("Failed\n", keyword);
+		return -EAGAIN;
+	}
+
+	va_start (args, fmt);
+	vsscanf(src, fmt, args);
+	fgets(buf, PROC_MAX_LINE, file);
+	va_end (args);
+
+	return 0;
+}
+
+int parse_zone_info(struct zone_info **zone)
+{
 	FILE *file;
-	file = fopen(SLABINFO, "r");
+	char line[PROC_MAX_LINE], zone_name[ZONENAMELEN];
+	int node;
 
+	file = fopen(ZONEINFO, "r");
 	if (!file) {
 		return -EINVAL;
 	}
 
+	fgets(line, PROC_MAX_LINE, file);
+	for (;;) {
+		if (parse_keyword(1, file, line, "Node", "Node %d, zone %s", &node, zone_name))
+			break;
+
+		*zone = calloc(sizeof(struct zone_info), 1);
+		(*zone)->node = node;
+		strncpy((*zone)->name, zone_name, ZONENAMELEN);
+
+		if (parse_keyword(0, file, line, "free", "free %d", &(*zone)->free))
+			continue;
+		if (parse_keyword(0, file, line, "min", "min %d", &(*zone)->min))
+			continue;
+		if (parse_keyword(0, file, line, "low", "low %d", &(*zone)->low))
+			continue;
+		if (parse_keyword(0, file, line, "spanned", "spanned %d", &(*zone)->spanned))
+			continue;
+		if (parse_keyword(0, file, line, "present", "present %d", &(*zone)->present))
+			continue;
+		if (parse_keyword(0, file, line, "managed", "managed %d", &(*zone)->managed))
+			continue;
+		if (parse_keyword(1, file, line, "start_pfn", "start_pfn: %d", &(*zone)->start_pfn))
+			continue;
+		zone = &(*zone)->next_zone;
+	}
 	return 0;
 }

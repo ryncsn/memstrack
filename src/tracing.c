@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "memory-tracer.h"
 #include "tracing.h"
+#include "proc.h"
 
 #define TASK_NAME_LEN_MAX 1024
 
@@ -55,9 +56,22 @@ static char* get_process_name_by_pid(const int pid)
 }
 
 void mem_tracing_init() {
-	int total_pages = sysconf(_SC_PHYS_PAGES);
+	unsigned long total_pages;
+	unsigned long max_pfn;
+	struct zone_info *zone;
 
-	page_map = calloc(sizeof(struct PageRecord), total_pages);
+	total_pages = sysconf(_SC_PHYS_PAGES);
+	parse_zone_info(&zone);
+	max_pfn = 0;
+
+	while(zone) {
+		if (max_pfn < zone->spanned + zone->start_pfn)
+			max_pfn = zone->spanned + zone->start_pfn;
+		zone = zone->next_zone;
+	}
+
+	// TODO: handle holes to save memory
+	page_map = calloc(sizeof(struct PageRecord), max_pfn);
 }
 
 void update_record(struct TraceNode *tracenode, struct Event *event) {

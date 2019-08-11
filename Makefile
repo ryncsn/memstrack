@@ -9,7 +9,7 @@ dracutlibdir ?= ${prefix}/lib/dracut
 
 CC = gcc
 CFLAGS = -std=c11 -g -O2
-MEMORY_TRACER_OBJ = src/memory-tracer.o src/tracing.o src/utils.o src/perf.o src/perf-handler.o src/ftrace.o src/ftrace-handler.o src/proc-mem.o
+MEMORY_TRACER_OBJ = src/memory-tracer.o src/tracing.o src/utils.o src/perf.o src/perf-handler.o src/ftrace.o src/ftrace-handler.o src/proc.o
 
 all: memory-tracer
 
@@ -19,7 +19,7 @@ ftrace.o: src/ftrace.c src/memory-tracer.h src/ftrace.h
 ftrace-handler.o: src/ftrace-handler.c src/memory-tracer.h src/tracing.h src/utils.h src/ftrace.h
 perf.o: src/perf.c src/memory-tracer.h src/perf.h
 perf-handler.o: src/perf-handler.c src/memory-tracer.h src/tracing.h src/utils.h src/perf.h
-proc-mem.o: src/proc-mem.c src/proc-mem.h
+proc.o: src/proc.c src/proc.h
 memory-tracer.o: src/memory-tracer.c src/perf-handler.h src/tracing.h src/utils.h src/ftrace-handler.h src/memory-tracer.h
 
 memory-tracer: $(MEMORY_TRACER_OBJ)
