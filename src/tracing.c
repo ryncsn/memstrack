@@ -21,6 +21,7 @@ struct HashMap TaskMap = {
 
 char *pid_map[65535];
 struct PageRecord *page_map;
+unsigned long total_alloc, total_free;
 
 static struct Symbol {
 	unsigned long long addr;
@@ -208,6 +209,7 @@ static void free_callsite(struct TraceNode* tracenode) {
  */
 void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long num) {
 	while (num--) {
+		total_alloc += page_size;
 		page_map[pfn].tracenode = root;
 	}
 }
@@ -220,6 +222,7 @@ void record_page_free(unsigned long pfn, unsigned long num) {
 	struct TraceNode *tracenode = page_map[pfn].tracenode;
 
 	while (num--) {
+		total_free += page_size;
 		page_map[pfn].tracenode = NULL;
 	}
 
