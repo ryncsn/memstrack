@@ -23,3 +23,6 @@ WIP options:<br>
 # Install as dracut module
 > make dracut-module-install<br>
 > (The debug result will be avaiable in the initramfs as /memory-debug, still need to copy that to where you want to dump it manually)<br>
+
+# Note
+For for Linux kernel using ORC unwinder and version below 5.2, it have a bug with tracepoints that unable to generate stack trace properly using perf, so you might empty stack trace data using --perf.  To avoid such problem, please update your kernel to latest version.
