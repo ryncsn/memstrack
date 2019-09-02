@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 
 check() {
-    return 0
+    return 255
 }
 
 depends() {
