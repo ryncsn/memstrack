@@ -9,12 +9,10 @@ extern struct HashMap TaskMap;
 
 struct Record {
 	int count;
-	int bytes_req;
-	int bytes_req_peak;
-	int bytes_alloc;
-	int bytes_alloc_peak;
-	int pages_alloc;
-	int pages_alloc_peak;
+	long pages_req;
+	long pages_req_peak;
+	long pages_alloc;
+	long pages_alloc_peak;
 };
 
 struct TraceNode {
@@ -24,39 +22,26 @@ struct TraceNode {
 		struct TraceNode *parent_task;
 	};
 	union {
-		struct Callsite *child_callsites;
 		struct Task *child_tasks;
+		struct Callsite *child_callsites;
 	};
 	struct Record *record;
 };
 
 struct Callsite {
-	// Keep it the first element
 	struct TraceNode tracenode;
+	struct TreeNode node;
 
 	char *symbol;
 	unsigned long addr;
-
-	struct TreeNode node;
 };
 
 struct Task {
-	// Keep it the first element
 	struct TraceNode tracenode;
+	struct HashNode node;
 
 	char *task_name;
 	int pid;
-
-	struct HashNode node;
-};
-
-struct Event {
-	char *event;
-	unsigned long pfn;
-	unsigned long addr;
-	unsigned long bytes_req;
-	unsigned long bytes_alloc;
-	unsigned long pages_alloc;
 };
 
 struct PageRecord {
@@ -64,21 +49,26 @@ struct PageRecord {
 };
 
 struct AllocRecord {
-	unsigned long long addr;
-	unsigned long size;
-
+	struct TreeNode node;
 	struct TraceNode *tracenode;
 
-	struct TreeNode node;
+	unsigned long long addr;
+	unsigned long size;
 };
 
-struct Context {
-	struct Task *task;
-	struct Event event;
+struct AllocEvent {
+	unsigned long kvaddr;
+	long bytes_req;
+	long bytes_alloc;
+};
+
+struct PageEvent {
+	unsigned long pfn;
+	long pages_alloc;
 };
 
 void mem_tracing_init();
-void update_record(struct TraceNode *record, struct Event *event);
+void update_record(struct TraceNode *record, struct PageEvent *pe, struct AllocEvent *ae);
 
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);
@@ -86,9 +76,6 @@ struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *callsit
 
 void record_page_alloc(struct TraceNode *root, unsigned long addr, unsigned long order);
 void record_page_free(unsigned long pfn, unsigned long num);
-
-int compTask(const void *lht, const void *rht);
-int hashTask(const void *task);
 
 struct Task* get_task(struct HashMap *map, char* task_name, int pid);
 struct Task* insert_task(struct HashMap *map, struct Task* task);

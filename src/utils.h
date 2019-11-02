@@ -23,8 +23,8 @@ struct HashMap {
 };
 
 
-#define get_node_data(node, data_type, member)\
-	(data_type*)((char *)node - offsetof(data_type, member))
+#define container_of(ptr, type, member)\
+	((type *)((void *)(ptr) - offsetof(type, member)))
 
 
 struct TreeNode* get_tree_node(

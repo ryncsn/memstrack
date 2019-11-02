@@ -6,7 +6,7 @@ extern int memtrac_page;
 extern int memtrac_ftrace;
 extern int memtrac_json;
 extern int memtrac_print;
-extern int page_size;
+extern unsigned int page_size;
 
 #define LOG_LVL_DEBUG 0
 #define LOG_LVL_INFO 1

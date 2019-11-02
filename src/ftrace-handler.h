@@ -3,4 +3,4 @@
 
 int ftrace_handling_init();
 int ftrace_handling_clean();
-int ftrace_handling_process(struct Context *context);
+int ftrace_handling_process();

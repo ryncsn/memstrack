@@ -24,11 +24,9 @@ int memtrac_slab;
 int memtrac_page;
 int memtrac_show_misc;
 
-int page_size;
+unsigned int page_size;
 
 char* memtrac_perf_base;
-
-struct Context current_context;
 
 int memtrac_log (int level, const char *__restrict fmt, ...){
 	if (!memtrac_debug && level <= LOG_LVL_DEBUG) {
@@ -77,13 +75,13 @@ void on_signal(int signal) {
 void do_process_perf() {
 	perf_handling_start();
 	while (1) {
-		perf_handling_process(&current_context);
+		perf_handling_process();
 	}
 }
 
 void do_process_ftrace() {
 	while (1) {
-		ftrace_handling_process(&current_context);
+		ftrace_handling_process();
 	}
 }
 
@@ -123,13 +121,14 @@ void display_usage() {
 }
 
 void tune_glibc() {
-	mallopt(M_TOP_PAD, 0);
-	mallopt(M_TRIM_THRESHOLD, 0);
+	mallopt(M_TOP_PAD, 4096);
+	mallopt(M_TRIM_THRESHOLD, 4096);
 }
 
 int main(int argc, char **argv) {
 	tune_glibc();
 	page_size = getpagesize();
+
 	mem_tracing_init();
 
 	while (1) {

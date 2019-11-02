@@ -14,6 +14,11 @@ static FILE* ftrace_file;
 char ftrace_line[MAX_LINE];
 unsigned int lookahead;
 
+static struct Task *task;
+static struct PageEvent pevent;
+static struct AllocEvent aevent;
+static char *event;
+
 static void __ignore_stacktrace() {
 	// Igore possible following stacktrace
 	do {
@@ -22,7 +27,7 @@ static void __ignore_stacktrace() {
 
 }
 
-static struct TraceNode* __process_stacktrace(struct Context *context) {
+static struct TraceNode* __process_stacktrace() {
 	lookahead = !!ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file);
 	if (!lookahead) {
 		// EOF
@@ -42,18 +47,18 @@ static struct TraceNode* __process_stacktrace(struct Context *context) {
 	callsite[callsite_len - 1] = '\0';
 
 	// Process next traceline
-	tp = __process_stacktrace(context);
+	tp = __process_stacktrace();
 
 	if (tp == NULL) {
 		tp = to_tracenode(
 				get_or_new_child_callsite(
-					to_tracenode(context->task),
+					to_tracenode(task),
 					callsite, 0));
 	} else {
 		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
 	}
 
-	update_record(tp, &context->event);
+	update_record(tp, &pevent, &aevent);
 
 	return tp;
 }
@@ -74,7 +79,7 @@ int ftrace_handling_clean() {
 	return ftrace_cleanup(&ftrace_file);
 }
 
-int ftrace_handle_mm_page_alloc(struct Context *context) {
+int ftrace_handle_mm_page_alloc() {
 	char *page_arg, *pfn_arg, *order_arg, *migratetype_arg, *gfp_flags_arg;
 	page_arg = strtok(NULL, " ") + sizeof("page=") - 1;
 	pfn_arg = strtok(NULL, " ") + sizeof("pfn=") - 1;
@@ -82,41 +87,37 @@ int ftrace_handle_mm_page_alloc(struct Context *context) {
 	migratetype_arg = strtok(NULL, " ") + sizeof("migratetype=") - 1;
 	gfp_flags_arg = strtok(NULL, " ") + sizeof("gfp_flags=") - 1;
 
-	int order;
+	int order, pfn;
 	sscanf(order_arg, "%u", &order);
+	sscanf(pfn_arg, "%u", &pfn);
 
-	context->event.bytes_alloc = 0;
-	context->event.bytes_req = 0;
-	context->event.pages_alloc = 1;
+	pevent.pfn = pfn;
+	pevent.pages_alloc = 1;
 
 	for (int i = 0; i < order; i++) {
-		context->event.pages_alloc *= 2;
+		pevent.pages_alloc *= 2;
 	}
 
-	update_record(to_tracenode(context->task), &context->event);
+	update_record(to_tracenode(task), &pevent, NULL);
 	return 0;
 }
 
-int ftrace_handle_kmem_cache_alloc(struct Context *context) {
+int ftrace_handle_kmem_cache_alloc() {
 	unsigned long long ptr;
 	char *ptr_arg, *bytes_req_arg, *bytes_alloc_arg;
 	ptr_arg = strtok(NULL, " ") + sizeof("ptr=") - 1;
 	bytes_req_arg = strtok(NULL, " ") + sizeof("bytes_req=") - 1;
 	bytes_alloc_arg = strtok(NULL, " ") + sizeof("bytes_alloc=") - 1;
 
-	sscanf(bytes_req_arg, "%u", &context->event.bytes_req);
-	sscanf(bytes_alloc_arg, "%u", &context->event.bytes_alloc);
-	context->event.pages_alloc = 0;
+	sscanf(bytes_req_arg, "%u", &aevent.bytes_req);
+	sscanf(bytes_alloc_arg, "%u", &aevent.bytes_alloc);
+	sscanf(ptr_arg, "%llx", &aevent.kvaddr);
 
-	if (ptr_arg[0] == '0') {
-		sscanf(bytes_req_arg, "%llx", &ptr);
-	}
-
-	update_record(to_tracenode(context->task), &context->event);
+	update_record(to_tracenode(task), NULL, &aevent);
 	return 0;
 }
 
-int ftrace_handling_process(struct Context *context) {
+int ftrace_handling_process() {
 	while(lookahead || ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file)){
 		lookahead = 0;
 
@@ -140,19 +141,19 @@ int ftrace_handling_process(struct Context *context) {
 			pre_last = NULL;
 		}
 		if (strncmp(last + 2, FTRACE_STACK_TRACE_EVENT, strlen(FTRACE_STACK_TRACE_EVENT) - 1) == 0) {
-			if (!context->task) {
+			if (!task) {
 				log_debug("Got unexpected stacktrace!\n");
 				__ignore_stacktrace();
 			} else {
-				if (context->event.pages_alloc > 0) {
-					record_page_alloc(__process_stacktrace(context),
-							context->event.pfn,
-							context->event.pages_alloc);
-				} else if (context->event.pages_alloc < 0) {
-					record_page_free(context->event.pfn,
-							-context->event.pages_alloc);
+				if (pevent.pages_alloc > 0) {
+					record_page_alloc(__process_stacktrace(),
+							pevent.pfn,
+							pevent.pages_alloc);
+				} else if (pevent.pages_alloc < 0) {
+					record_page_free(pevent.pfn,
+							-pevent.pages_alloc);
 				}
-				context->task = NULL;
+				task = NULL;
 			}
 		} else {
 			char *task_info = NULL, *event_info = NULL, *pid_arg = NULL;
@@ -189,14 +190,14 @@ int ftrace_handling_process(struct Context *context) {
 			}
 
 			// char *event, *callsite;
-			context->event.event = strtok(event_info, " ");
+			event = strtok(event_info, " ");
 			// callsite = strtok(NULL, " ");
-			context->task = get_or_new_task(&TaskMap, task_info, pid);
+			task = get_or_new_task(&TaskMap, task_info, pid);
 
-			if (strncmp(context->event.event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
-				ftrace_handle_kmem_cache_alloc(context);
-			} else if (strncmp(context->event.event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
-				ftrace_handle_mm_page_alloc(context);
+			if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
+				ftrace_handle_kmem_cache_alloc();
+			} else if (strncmp(event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
+				ftrace_handle_mm_page_alloc();
 			} else {
 				log_warn("Unexpected event %s\n", event_info);
 			}

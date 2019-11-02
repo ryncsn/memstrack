@@ -135,7 +135,7 @@ int perf_event_start_sampling(struct PerfEvent *perf_event) {
 	return ret;
 }
 
-int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body = (struct perf_sample_fix*)header;
 	log_debug("Event: %s", perf_event->event_name);
 
@@ -176,7 +176,7 @@ int perf_handle_lost_event(const unsigned char* header) {
 	return 0;
 }
 
-int perf_event_process(struct PerfEvent *perf_event, void *blob) {
+int perf_event_process(struct PerfEvent *perf_event) {
 	unsigned char* data;
 	struct perf_event_header *header;
 	struct perf_event_mmap_page *meta;
@@ -192,9 +192,9 @@ int perf_event_process(struct PerfEvent *perf_event, void *blob) {
 			switch (header->type) {
 				case PERF_RECORD_SAMPLE:
 					if (perf_event->sample_handler) {
-						perf_event->sample_handler(perf_event, data, blob);
+						perf_event->sample_handler(perf_event, data);
 					} else {
-						perf_handle_sample(perf_event, data, blob);
+						perf_handle_sample(perf_event, data);
 					}
 					break;
 				case PERF_RECORD_LOST:

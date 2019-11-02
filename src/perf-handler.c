@@ -29,9 +29,12 @@ const unsigned char* __process_common(struct PerfEvent *perf_event, const unsign
 	return header;
 }
 
-static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *callchain, void *blob) {
+static struct TraceNode* __process_stacktrace(
+		struct perf_sample_callchain *callchain,
+		struct Task *task, struct PageEvent *event)
+{
 	struct TraceNode *tp = NULL;
-	struct Context *context = (struct Context*)blob;
+
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
@@ -39,30 +42,27 @@ static struct TraceNode* __process_stacktrace(struct perf_sample_callchain *call
 			continue;
 		}
 		if (i == 1) {
-			tp = to_tracenode(
-					get_or_new_child_callsite(
-						to_tracenode(context->task),
-						NULL, addr));
-			if (context->event.pages_alloc > 0) {
-				record_page_alloc(tp, context->event.pfn, context->event.pages_alloc);
-			} else if (context->event.pages_alloc < 0) {
-				record_page_free(context->event.pfn, -context->event.pages_alloc);
+			tp = to_tracenode(get_or_new_child_callsite(to_tracenode(task), NULL, addr));
+			if (event->pages_alloc > 0) {
+				record_page_alloc(tp, event->pfn, event->pages_alloc);
+			} else if (event->pages_alloc < 0) {
+				record_page_free(event->pfn, - event->pages_alloc);
 			}
 		} else {
 			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}
 	}
 
-	update_record(tp, &context->event);
+	update_record(tp, event, NULL);
 	return tp;
 }
 
-int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+int perf_handle_nothing(struct PerfEvent *perf_event, const unsigned char* header) {
 	perf_event->counter++;
 	return 0;
 }
 
-int perf_handle_kfree(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+int perf_handle_kfree(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
@@ -73,9 +73,7 @@ int perf_handle_kfree(struct PerfEvent *perf_event, const unsigned char* header,
 	return 0;
 }
 
-int perf_handle_kmalloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	struct Context *context = (struct Context*)blob;
-
+int perf_handle_kmalloc(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
@@ -83,15 +81,10 @@ int perf_handle_kmalloc(struct PerfEvent *perf_event, const unsigned char* heade
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
-	context->event.bytes_req = raw_data->bytes_req;
-	context->event.bytes_alloc = raw_data->bytes_alloc;
-	context->event.pages_alloc = 0;
-
 	return 0;
 }
 
-int perf_handle_kmem_cache_free(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
+int perf_handle_kmem_cache_free(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
@@ -102,9 +95,7 @@ int perf_handle_kmem_cache_free(struct PerfEvent *perf_event, const unsigned cha
 	return 0;
 }
 
-int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	struct Context *context = (struct Context*)blob;
-
+int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
@@ -112,17 +103,12 @@ int perf_handle_kmem_cache_alloc(struct PerfEvent *perf_event, const unsigned ch
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
-	context->event.addr = raw_data->ptr;
-	context->event.bytes_req = raw_data->bytes_req;
-	context->event.bytes_alloc = raw_data->bytes_alloc;
-	context->event.pages_alloc = 0;
-
 	return 0;
 }
 
-int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	struct Context *context = (struct Context*)blob;
+int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char* header) {
+	struct PageEvent event;
+	struct Task *task;
 
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
@@ -131,24 +117,22 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
-	context->event.bytes_req = 0;
-	context->event.bytes_alloc = 0;
-	context->event.pages_alloc = 1;
-	context->event.pfn = raw_data->pfn;
-	// context->event.addr = 0;
+	task = get_or_new_task(&TaskMap, NULL, body->pid);
+	event.pages_alloc = 1;
+	event.pfn = raw_data->pfn;
 
 	for (int i = 0; i < (int)raw_data->order; ++i) {
-		context->event.pages_alloc *= 2;
+		event.pages_alloc *= 2;
 	}
 
-	__process_stacktrace(callchain, context);
+	__process_stacktrace(callchain, task, &event);
 
 	return 0;
 }
 
-int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* header, void *blob) {
-	struct Context *context = (struct Context*)blob;
+int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* header) {
+	struct PageEvent event;
+	struct Task *task;
 
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
@@ -157,17 +141,15 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	context->task = get_or_new_task(&TaskMap, NULL, body->pid);
-	context->event.bytes_req = 0;
-	context->event.bytes_alloc = 0;
-	context->event.pages_alloc = -1;
-	context->event.pfn = raw_data->pfn;
+	task = get_or_new_task(&TaskMap, NULL, body->pid);
+	event.pages_alloc = -1;
+	event.pfn = raw_data->pfn;
 
 	for (int i = 0; i < (int)raw_data->order; ++i) {
-		context->event.pages_alloc *= 2;
+		event.pages_alloc *= 2;
 	}
 
-	__process_stacktrace(callchain, context);
+	__process_stacktrace(callchain, task, &event);
 
 	return 0;
 }
@@ -182,7 +164,7 @@ static int perf_tracks_slab() {
 
 static struct perf_event_entry {
 	char *name;
-	int (*handler)(struct PerfEvent *perf_event, const unsigned char* header, void *blob);
+	int (*handler)(struct PerfEvent *perf_event, const unsigned char* header);
 	int (*is_enabled)(void);
 } const perf_event_table[] = {
 	{ "kmem:kmalloc",         	perf_handle_kmalloc,         	perf_tracks_slab },
@@ -267,7 +249,7 @@ int perf_handling_start() {
 	return err;
 }
 
-int perf_handling_process(struct Context* context) {
+int perf_handling_process() {
 	int err = 0, i;
 	for (i = 0; i < perf_events_num; i++) {
 		perf_fds[i].fd = perf_events[i].perf_fd;
@@ -275,7 +257,7 @@ int perf_handling_process(struct Context* context) {
 	}
 	poll(perf_fds, perf_events_num, 250);
 	for (i = 0; i < perf_events_num; i++) {
-		err = perf_event_process(perf_events + i, context);
+		err = perf_event_process(perf_events + i);
 		if (err) {
 			return err;
 		}
