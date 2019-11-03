@@ -415,12 +415,15 @@ static int comp_callsite_mem(const void *x, const void *y) {
 }
 
 static struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
-	struct TreeNode **callsites, **tail;
 	int count = 0;
+	struct TreeNode **callsites, **tail;
+
 	iter_tree_node(root, count_tree_node, &count);
-	tail = callsites = calloc(count + 1, sizeof(struct TreeNode*));
+	tail = callsites = malloc((count + 1) * sizeof(struct TreeNode*));
+
 	iter_tree_node(root, collect_tree_node, &tail);
 	qsort((void*)callsites, count, sizeof(struct TreeNode*), comp_callsite_mem);
+
 	return callsites;
 }
 
@@ -485,6 +488,7 @@ void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	}
 	log_info("{\n");
 	log_info("%s \"pages_alloc\": %d", padding, to_tracenode(callsite)->record->pages_alloc);
+	log_info(",%s \"pages_alloc_peak\": %d", padding, to_tracenode(callsite)->record->pages_alloc_peak);
 	if (to_tracenode(callsite)->child_callsites) {
 		log_info(",\n%s \"callsites\": {\n", padding);
 		struct TreeNode **nodes;
@@ -507,6 +511,7 @@ void print_task_json(struct Task* task, int last_task) {
 	log_info("  \"task_name\": \"%s\",\n", task->task_name);
 	log_info("  \"pid\" :\"%d\",\n", task->pid);
 	log_info("  \"pages_alloc\": %d,\n", to_tracenode(task)->record->pages_alloc);
+	log_info("  \"pages_alloc_peak\": %d,\n", to_tracenode(task)->record->pages_alloc_peak);
 	log_info("  \"callsites\": {\n");
 	if(to_tracenode(task)->child_callsites) {
 		struct TreeNode **nodes;
