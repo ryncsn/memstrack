@@ -16,6 +16,7 @@
 unsigned long total_alloc, total_free;
 
 static char *pid_map[65535];
+int task_num;
 
 static int comp_task(const void *lht, const void *rht) {
 	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
@@ -292,6 +293,7 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 		task->task_name = (char*)malloc(task_name_len);
 		task->pid = pid;
 		strcpy(task->task_name, task_name);
+		task_num++;
 		return insert_task(map, task);
 	}
 	return task;
@@ -356,16 +358,23 @@ static char* _find_symbol(unsigned long long addr) {
 	return _format_buffer;
 };
 
-void populate_tracenode(struct TraceNode* tracenode);
+/*
+ * Allocation info is only recorded at the tracenode represents the top of stack
+ * for better performacne, need to collect the info before generate report
+ */
+static void collect_child_info(struct TraceNode* tracenode);
 
 static void populate_child_callsites(struct TreeNode* treenode, void *blob) {
 	struct Record *parent_record = (struct Record*)blob;
 	struct Callsite *callsite = container_of(treenode, struct Callsite, node);
-	populate_tracenode(to_tracenode(callsite));
+
+	collect_child_info(to_tracenode(callsite));
+
 	parent_record->pages_alloc += to_tracenode(callsite)->record->pages_alloc;
+	parent_record->pages_alloc_peak += to_tracenode(callsite)->record->pages_alloc_peak;
 }
 
-void populate_tracenode(struct TraceNode* tracenode) {
+static void collect_child_info(struct TraceNode* tracenode) {
 	if (tracenode->record == NULL) {
 		tracenode->record = calloc(1, sizeof(struct Record));
 	} else {
@@ -384,7 +393,7 @@ void count_tree_node(struct TreeNode* _, void *blob) {
 void collect_tree_node(struct TreeNode* tnode, void *blob) {
 	struct TreeNode ***tail = (struct TreeNode***) blob;
 	struct TraceNode *tn = to_tracenode(container_of(tnode, struct Callsite, node));
-	populate_tracenode(tn);
+	collect_child_info(tn);
 	**tail = tnode;
 	(*tail)++;
 }
@@ -434,36 +443,23 @@ static int comp_task_mem(const void *x, const void *y) {
 static struct Task **sort_tasks(struct HashMap *map) {
 	struct Task **tasks = NULL;
 	struct HashNode *node = NULL;
-	int task_count = 0;
-	for (int i = 0; i < HASH_BUCKET; i++) {
+
+	tasks = malloc((task_num + 1) * sizeof(struct Task*));
+	tasks[task_num] = NULL;
+
+	for (int i = 0, j = 0; i < HASH_BUCKET; i++) {
 		if (map->buckets[i] != NULL) {
 			node = map->buckets[i];
 			while(node) {
+				tasks[j] = container_of(node, struct Task, node);
+				collect_child_info(to_tracenode(tasks[j]));
 				node = node->next;
-				task_count ++;
-			}
-		}
-	}
-	tasks = calloc(task_count + 1, sizeof(struct Task*));
-	task_count = 0;
-	for (int i = 0; i < HASH_BUCKET; i++) {
-		if (map->buckets[i] != NULL) {
-			node = map->buckets[i];
-			while(node) {
-				tasks[task_count] = (container_of
-					 (node,
-					  struct Task,
-					  node)
-					);
-				populate_tracenode(to_tracenode(tasks[task_count]));
-				node = node->next;
-				task_count++;
+				j++;
 			}
 		}
 	}
 
-	tasks[task_count] = NULL;
-	qsort((void*)tasks, task_count, sizeof(struct Task*), comp_task_mem);
+	qsort((void*)tasks, task_num, sizeof(struct Task*), comp_task_mem);
 
 	return tasks;
 }
@@ -549,7 +545,9 @@ void print_callsite(struct TreeNode* tnode, void *blob) {
 		log_info("%s(unknown)", padding);
 	}
 
-	log_info(" (Pages: %d)\n", tracenode->record->pages_alloc);
+	log_info(" Pages: %d (peak: %d)\n",
+			tracenode->record->pages_alloc,
+			tracenode->record->pages_alloc_peak);
 
 	if (tracenode->child_callsites) {
 		struct TreeNode **nodes;
@@ -564,7 +562,10 @@ void print_callsite(struct TreeNode* tnode, void *blob) {
 void print_task(struct Task* task) {
 	int indent;
 	struct TraceNode *tn = to_tracenode(task);
-	log_info("%s (Pages: %d)\n", task->task_name, tn->record->pages_alloc);
+	log_info("%s Pages: %d (peak: %d)\n",
+			task->task_name,
+			tn->record->pages_alloc,
+			tn->record->pages_alloc_peak);
 	if (to_tracenode(task)->child_callsites) {
 		struct TreeNode **nodes;
 		indent = 2;
@@ -577,15 +578,20 @@ void print_task(struct Task* task) {
 }
 
 void generate_stack_statistic(struct HashMap *task_map, int task_limit) {
+	struct Task **tasks;
+
 	_load_kallsyms();
-	struct Task **task = sort_tasks(task_map);
-	if (memtrac_json) log_info("[\n");
-	for (int i = 0; task[i] != NULL && i < task_limit; i++) {
+	tasks = sort_tasks(task_map);
+
+	if (memtrac_json)
+		log_info("[\n");
+	for (int i = 0; tasks[i] != NULL && i < task_limit; i++) {
 		if (memtrac_json) {
-			print_task_json(task[i], task[i + 1] == NULL || i + 1 == task_limit);
+			print_task_json(tasks[i], tasks[i + 1] == NULL || i + 1 == task_limit);
 		} else {
-			print_task(task[i]);
+			print_task(tasks[i]);
 		}
 	}
-	if (memtrac_json) log_info("]\n");
+	if (memtrac_json)
+		log_info("]\n");
 }

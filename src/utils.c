@@ -171,6 +171,9 @@ struct TreeNode* insert_tree_node(
 	}
 }
 
+/*
+ * DFS starts from left
+ */
 void iter_tree_node(
 		struct TreeNode *root,
 		void (*handler)(struct TreeNode *node, void *blob),
