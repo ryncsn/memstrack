@@ -16,7 +16,8 @@
 unsigned long total_alloc, total_free;
 
 static char *pid_map[65535];
-int task_num;
+static int task_num;
+static unsigned long max_pfn;
 
 static int comp_task(const void *lht, const void *rht) {
 	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
@@ -73,7 +74,6 @@ static char* get_process_name_by_pid(const int pid)
 void mem_tracing_init() {
 	struct zone_info *zone;
 	unsigned long total_pages;
-	unsigned long max_pfn;
 
 	total_pages = sysconf(_SC_PHYS_PAGES);
 	parse_zone_info(&zone);
@@ -225,6 +225,12 @@ static void free_callsite(struct TraceNode* tracenode) {
 void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long nr_pages) {
 	total_alloc += page_size * nr_pages;
 
+	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
+	if (pfn > max_pfn) {
+		pfn = pfn / sizeof(struct page);
+		pfn = pfn % max_pfn;
+	}
+
 	while (nr_pages--) {
 		page_map[pfn++].tracenode = root;
 	}
@@ -236,6 +242,12 @@ void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long 
  */
 void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	struct TraceNode *tracenode = NULL, *parent;
+
+	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
+	if (pfn > max_pfn) {
+		pfn = pfn / 4;
+		pfn = pfn % max_pfn;
+	}
 
 	while (nr_pages--) {
 		total_free += page_size;
@@ -420,6 +432,7 @@ static struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
 
 	iter_tree_node(root, count_tree_node, &count);
 	tail = callsites = malloc((count + 1) * sizeof(struct TreeNode*));
+	callsites[count] = NULL;
 
 	iter_tree_node(root, collect_tree_node, &tail);
 	qsort((void*)callsites, count, sizeof(struct TreeNode*), comp_callsite_mem);
