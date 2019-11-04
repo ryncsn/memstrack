@@ -8,9 +8,6 @@
 extern struct HashMap TaskMap;
 
 struct Record {
-	int count;
-	long pages_req;
-	long pages_req_peak;
 	long pages_alloc;
 	long pages_alloc_peak;
 };
@@ -73,9 +70,6 @@ void update_record(struct TraceNode *record, struct PageEvent *pe, struct AllocE
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);
 struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *callsite, unsigned long addr);
-
-void record_page_alloc(struct TraceNode *root, unsigned long addr, unsigned long order);
-void record_page_free(unsigned long pfn, unsigned long num);
 
 struct Task* get_task(struct HashMap *map, char* task_name, int pid);
 struct Task* insert_task(struct HashMap *map, struct Task* task);

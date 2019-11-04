@@ -58,8 +58,6 @@ static struct TraceNode* __process_stacktrace() {
 		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
 	}
 
-	update_record(tp, &pevent, &aevent);
-
 	return tp;
 }
 
@@ -118,6 +116,8 @@ int ftrace_handle_kmem_cache_alloc() {
 }
 
 int ftrace_handling_process() {
+	struct TraceNode *tn;
+
 	while(lookahead || ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file)){
 		lookahead = 0;
 
@@ -145,14 +145,8 @@ int ftrace_handling_process() {
 				log_debug("Got unexpected stacktrace!\n");
 				__ignore_stacktrace();
 			} else {
-				if (pevent.pages_alloc > 0) {
-					record_page_alloc(__process_stacktrace(),
-							pevent.pfn,
-							pevent.pages_alloc);
-				} else if (pevent.pages_alloc < 0) {
-					record_page_free(pevent.pfn,
-							-pevent.pages_alloc);
-				}
+				tn = __process_stacktrace();
+				update_record(tn, &pevent, NULL);
 				task = NULL;
 			}
 		} else {

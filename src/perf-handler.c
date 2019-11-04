@@ -35,6 +35,12 @@ static struct TraceNode* __process_stacktrace(
 {
 	struct TraceNode *tp = NULL;
 
+	// TODO: currently stacktrace is ignore for freeing event
+	if (event->pages_alloc < 0) {
+		update_record(NULL, event, NULL);
+		return NULL;
+	}
+
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
@@ -43,11 +49,6 @@ static struct TraceNode* __process_stacktrace(
 		}
 		if (i == 1) {
 			tp = to_tracenode(get_or_new_child_callsite(to_tracenode(task), NULL, addr));
-			if (event->pages_alloc > 0) {
-				record_page_alloc(tp, event->pfn, event->pages_alloc);
-			} else if (event->pages_alloc < 0) {
-				record_page_free(event->pfn, - event->pages_alloc);
-			}
 		} else {
 			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
 		}

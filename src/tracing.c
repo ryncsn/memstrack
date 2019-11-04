@@ -18,6 +18,7 @@ unsigned long total_alloc, total_free;
 static char *pid_map[65535];
 static int task_num;
 static unsigned long max_pfn;
+static unsigned int trivial_peak_limit = 8;
 
 static int comp_task(const void *lht, const void *rht) {
 	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
@@ -27,7 +28,7 @@ static int comp_task(const void *lht, const void *rht) {
 }
 
 static int hash_task(const void *task) {
-	return ((struct Task*)task)->pid;
+	return ((unsigned int)((struct Task*)task)->pid) % HASH_BUCKET;
 }
 
 struct HashMap TaskMap = {
@@ -89,44 +90,144 @@ void mem_tracing_init() {
 	page_map = calloc(max_pfn, sizeof(struct PageRecord));
 }
 
-void update_record(struct TraceNode *tracenode, struct PageEvent *pevent, struct AllocEvent *aevent) {
-	struct Record *record;
-
-	if (!tracenode->record) {
-		tracenode->record = calloc(1, sizeof(struct Record));
-	}
-
-	record = tracenode->record;
-	record->pages_alloc += pevent->pages_alloc;
-
-	if (record->pages_alloc > record->pages_alloc_peak) {
-		record->pages_alloc_peak = record->pages_alloc;
-	}
-}
-
-static int is_empty_tracenode(struct TraceNode *node) {
-	struct Record *record;
-
-	if (node->child_callsites != NULL) {
-		return 0;
-	}
-
-	record = node->record;
-	if (record->count == 0) {
-		if (record->pages_alloc != 0) {
-			log_error("Freeing node still have memory allocation data ");
-			log_error("(addr %lx, pages_alloc:%d)\n", to_callsite(node)->addr, record->pages_alloc);
-		}
-		return 1;
-	}
-	return 0;
-}
-
 static int compCallsite(struct TreeNode *src, struct TreeNode *root) {
 	struct Callsite *src_data = container_of(src, struct Callsite, node);
 	struct Callsite *root_data = container_of(root, struct Callsite, node);
 	// TODO: Fix if symbol only available on one node
 	return (long)src_data->addr - (long)root_data->addr;
+}
+
+static int is_trivial_record(struct Record *record) {
+	if (!record)
+		return 1;
+
+	if (record->pages_alloc == 0 && record->pages_alloc_peak < trivial_peak_limit) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static int is_trivial_tracenode(struct TraceNode *node) {
+	if (node->child_callsites)
+		return 0;
+
+	if (is_trivial_record(node->record)) {
+		return 1;
+	}
+
+	return 0;
+}
+
+/*
+ * Try to free a callsite, if it have no child and have no memory info, then free it
+ */
+static void free_tracenode(struct TraceNode* tracenode) {
+	struct TraceNode *parent;
+	while (tracenode) {
+		parent = tracenode->parent;
+
+		if (!parent) {
+			// It's a task
+			return;
+		}
+
+		if (tracenode->child_callsites) {
+			if (tracenode->record)
+				free(tracenode->record);
+		} else {
+			struct TreeNode *tree_root = &parent->child_callsites->node;
+			get_remove_tree_node(&tree_root, &to_callsite(tracenode)->node, compCallsite);
+
+			if (tree_root) {
+				parent->child_callsites = container_of(tree_root, struct Callsite, node);
+			} else {
+				parent->child_callsites = NULL;
+			}
+			free(tracenode);
+		}
+
+		tracenode = parent;
+	}
+}
+
+/*
+ * Record that a memory region is being allocated by a tracenode
+ * Should only be called against top of the stack
+ */
+static void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long nr_pages) {
+	struct Record *record;
+	total_alloc += page_size * nr_pages;
+
+	record = root->record;
+	record->pages_alloc += nr_pages;
+	if (record->pages_alloc > record->pages_alloc_peak) {
+		record->pages_alloc_peak = record->pages_alloc;
+	}
+
+	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
+	if (pfn > max_pfn) {
+		pfn = pfn / 4;
+		pfn = pfn % max_pfn;
+	}
+
+	while (nr_pages--) {
+		page_map[pfn++].tracenode = root;
+	}
+}
+
+/*
+ * Record that pages is being freed by a tracenode
+ * Should only be called against top of the stack
+ */
+static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
+	struct TraceNode *tracenode = NULL;
+	total_free += page_size * nr_pages;
+
+	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
+	if (pfn > max_pfn) {
+		pfn = pfn / 4;
+		pfn = pfn % max_pfn;
+	}
+
+	while (nr_pages--) {
+		if (tracenode != page_map[pfn].tracenode) {
+			if (tracenode && is_trivial_tracenode(tracenode)) {
+				free_tracenode(tracenode);
+				tracenode = NULL;
+			}
+
+			if (page_map[pfn].tracenode) {
+				tracenode = page_map[pfn].tracenode;
+			}
+		}
+
+		if (tracenode)
+			tracenode->record->pages_alloc--;
+
+		page_map[pfn++].tracenode = NULL;
+	}
+
+	if (tracenode && is_trivial_tracenode(tracenode)) {
+		free_tracenode(tracenode);
+		tracenode = NULL;
+	}
+}
+
+void update_record(struct TraceNode *tracenode, struct PageEvent *pevent, struct AllocEvent *aevent) {
+	if (tracenode && !tracenode->record) {
+		tracenode->record = calloc(1, sizeof(struct Record));
+	}
+
+	if (pevent) {
+		if (pevent->pages_alloc > 0) {
+			record_page_alloc(tracenode, pevent->pfn, pevent->pages_alloc);
+		} else if (pevent->pages_alloc < 0) {
+			record_page_free(pevent->pfn, 0 - pevent->pages_alloc);
+		} else {
+			// TODO: empty allocation?
+		}
+	}
 }
 
 struct Callsite* get_child_callsite(struct TraceNode *tnode, char *symbol, unsigned long addr) {
@@ -184,84 +285,6 @@ static int compAllocRerord(struct TreeNode *src, struct TreeNode *root) {
 	struct AllocRecord *src_data = container_of(src, struct AllocRecord, node);
 	struct AllocRecord *root_data = container_of(root, struct AllocRecord, node);
 	return (long)src_data->addr - (long)root_data->addr;
-}
-
-/*
- * Try to free a callsite, if it have no child and have no memory info, then free it
- */
-static void free_callsite(struct TraceNode* tracenode) {
-	if (tracenode->record->count) {
-		// Still have memory allocated
-		return;
-	}
-	while (tracenode) {
-		if (tracenode->parent == NULL) {
-			// It's a task
-			return;
-		}
-		if (!tracenode->child_callsites) {
-			struct TraceNode *parent = tracenode->parent;
-			struct TreeNode *tree_root = &parent->child_callsites->node;
-			get_remove_tree_node(&tree_root, &to_callsite(tracenode)->node, compCallsite);
-			if (tree_root) {
-				parent->child_callsites = container_of(tree_root, struct Callsite, node);
-			} else {
-				parent->child_callsites = NULL;
-			}
-			free(tracenode);
-			tracenode = parent;
-		} else {
-			free(tracenode->record);
-			tracenode->record = NULL;
-			return;
-		}
-	}
-}
-
-/*
- * Record that a memory region is being allocated by a tracenode
- * Should only be called against top of the stack
- */
-void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long nr_pages) {
-	total_alloc += page_size * nr_pages;
-
-	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
-	if (pfn > max_pfn) {
-		pfn = pfn / sizeof(struct page);
-		pfn = pfn % max_pfn;
-	}
-
-	while (nr_pages--) {
-		page_map[pfn++].tracenode = root;
-	}
-}
-
-/*
- * Record that pages is being freed by a tracenode
- * Should only be called against top of the stack
- */
-void record_page_free(unsigned long pfn, unsigned long nr_pages) {
-	struct TraceNode *tracenode = NULL, *parent;
-
-	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
-	if (pfn > max_pfn) {
-		pfn = pfn / 4;
-		pfn = pfn % max_pfn;
-	}
-
-	while (nr_pages--) {
-		total_free += page_size;
-		if (page_map[pfn].tracenode != NULL && tracenode != page_map[pfn].tracenode) {
-			tracenode = page_map[pfn].tracenode;
-
-			if (is_empty_tracenode(tracenode)) {
-				parent = tracenode->parent;
-				free_callsite(tracenode);
-			}
-		}
-
-		page_map[pfn++].tracenode = NULL;
-	}
 }
 
 static struct Task* try_get_task(struct HashMap *map, char* task_name, int pid) {
