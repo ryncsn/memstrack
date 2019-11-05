@@ -23,6 +23,10 @@ int memtrac_json;
 int memtrac_slab;
 int memtrac_page;
 int memtrac_show_misc;
+int memtrac_throttle = 100;
+int memtrac_summary;
+int memtrac_sort_alloc = 1;
+int memtrac_sort_peak = 0;
 
 unsigned int page_size;
 
@@ -63,7 +67,7 @@ void do_exit() {
 	if (memtrac_debug) {
 		task_map_debug();
 	}
-	generate_stack_statistic(&TaskMap, 65536);
+	final_report(&TaskMap, 0);
 	exit(0);
 }
 
@@ -94,10 +98,12 @@ static struct option long_options[] =
 	{"page",		no_argument,	&memtrac_page,		1},
 	{"json",		no_argument,	&memtrac_json,		1},
 	{"show-misc",		no_argument,	&memtrac_show_misc,	1},
+	{"summary",		no_argument,	&memtrac_summary,	1},
 	{"debug",		no_argument,		0,		'd'},
 	// {"human-readable",	no_argument,		0,		'h'},
 	// {"trace-base",	required_argument,	0,		'b'},
-	// {"throttle-output",	required_argument,	0,		't'},
+	{"throttle",		required_argument,	0,		't'},
+	{"sort-by",		required_argument,	0,		's'},
 	{"help",		no_argument,		0,		'?'},
 	{0, 0, 0, 0}
 };
@@ -114,10 +120,15 @@ void display_usage() {
 	log_info("    --json		Format result as json. \n");
 	// log_info("    --trace-base [DIR]	Use a different tracing mount path. \n");
 	log_info("    --show-misc	Generate a current memory usage summary report on start. \n");
+	log_info("    --throttle [PERCENTAGE] \n");
+	log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed. \n");
+	log_info("    			expects a number between 0 to 100. Useful to filter minor noises. \n");
+	log_info("    --sort-by {peak|alloc} \n");
+	log_info("    			How should the stack be sorted, by the peak usage or allocation statuc on tracer exit. \n");
+	log_info("    			Defaults to peak. \n");
+	log_info("    --summary \n");
+	log_info("    			Generate a summary instead of detailed stack info. \n");
 	log_info("    --help 		Print this message. \n");
-	// log_info("    --throttle-output [PERCENTAGE] \n");
-	// log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed. \n");
-	// log_info("    			expect a number between 0 to 100. Useful to filter minor noises. \n");
 }
 
 void tune_glibc() {
@@ -157,7 +168,20 @@ int main(int argc, char **argv) {
 				strcpy(memtrac_perf_base, optarg);
 				break;
 			case 't':
-				// Not implemented
+				memtrac_throttle = atoi(optarg);
+				if (memtrac_throttle < 0 || memtrac_throttle > 100) {
+					log_error("--throttle expects an integer between 0 - 100!\n");
+					exit(1);
+				}
+				break;
+			case 's':
+				if (strcmp(optarg, "peak")) {
+					memtrac_sort_peak = 1;
+					memtrac_sort_alloc = 0;
+				} else if (strcmp(optarg, "alloc")) {
+					memtrac_sort_peak = 0;
+					memtrac_sort_alloc = 1;
+				}
 				break;
 			case '?':
 				display_usage();

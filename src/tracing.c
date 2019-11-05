@@ -13,10 +13,10 @@
 #define TASK_NAME_LEN_MAX 1024
 #define PID_LEN_MAX 6
 
-unsigned long total_alloc, total_free;
+unsigned long page_alloc_counter, page_free_counter;
 
 static char *pid_map[65535];
-static int task_num;
+static int total_task_num;
 static unsigned long max_pfn;
 static unsigned int trivial_peak_limit = 8;
 
@@ -157,7 +157,7 @@ static void free_tracenode(struct TraceNode* tracenode) {
  */
 static void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long nr_pages) {
 	struct Record *record;
-	total_alloc += page_size * nr_pages;
+	page_alloc_counter += nr_pages;
 
 	record = root->record;
 	record->pages_alloc += nr_pages;
@@ -182,7 +182,6 @@ static void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigne
  */
 static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	struct TraceNode *tracenode = NULL;
-	total_free += page_size * nr_pages;
 
 	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
 	if (pfn > max_pfn) {
@@ -202,8 +201,10 @@ static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 			}
 		}
 
-		if (tracenode)
+		if (tracenode) {
 			tracenode->record->pages_alloc--;
+			page_free_counter++;
+		}
 
 		page_map[pfn++].tracenode = NULL;
 	}
@@ -328,7 +329,7 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 		task->task_name = (char*)malloc(task_name_len);
 		task->pid = pid;
 		strcpy(task->task_name, task_name);
-		task_num++;
+		total_task_num++;
 		return insert_task(map, task);
 	}
 	return task;
@@ -420,12 +421,12 @@ static void collect_child_info(struct TraceNode* tracenode) {
 	}
 }
 
-void count_tree_node(struct TreeNode* _, void *blob) {
+static void count_tree_node(struct TreeNode* _, void *blob) {
 	int *count = (int*)blob;
 	*count += 1;
 }
 
-void collect_tree_node(struct TreeNode* tnode, void *blob) {
+static void collect_tree_node(struct TreeNode* tnode, void *blob) {
 	struct TreeNode ***tail = (struct TreeNode***) blob;
 	struct TraceNode *tn = to_tracenode(container_of(tnode, struct Callsite, node));
 	collect_child_info(tn);
@@ -483,8 +484,7 @@ static struct Task **sort_tasks(struct HashMap *map) {
 	struct Task **tasks = NULL;
 	struct HashNode *node = NULL;
 
-	tasks = malloc((task_num + 1) * sizeof(struct Task*));
-	tasks[task_num] = NULL;
+	tasks = malloc(total_task_num * sizeof(struct Task*));
 
 	for (int i = 0, j = 0; i < HASH_BUCKET; i++) {
 		if (map->buckets[i] != NULL) {
@@ -498,12 +498,11 @@ static struct Task **sort_tasks(struct HashMap *map) {
 		}
 	}
 
-	qsort((void*)tasks, task_num, sizeof(struct Task*), comp_task_mem);
-
+	qsort((void*)tasks, total_task_num, sizeof(struct Task*), comp_task_mem);
 	return tasks;
 }
 
-void print_callsite_json(struct TreeNode* tnode, void *blob) {
+static void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	struct json_marker *current = (struct json_marker*)blob;
 	struct json_marker next = {current->indent + 2, 0};
 
@@ -541,7 +540,7 @@ void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	current->count++;
 }
 
-void print_task_json(struct Task* task, int last_task) {
+static void print_task_json(struct Task* task, int last_task) {
 	struct json_marker marker = {2, 0};
 	log_info(" {\n");
 	log_info("  \"task_name\": \"%s\",\n", task->task_name);
@@ -566,7 +565,7 @@ void print_task_json(struct Task* task, int last_task) {
 	}
 }
 
-void print_callsite(struct TreeNode* tnode, void *blob) {
+static void print_callsite(struct TreeNode* tnode, void *blob) {
 	int current_indent = *(int*)blob;
 	int next_indent = current_indent + 2;
 
@@ -600,7 +599,7 @@ void print_callsite(struct TreeNode* tnode, void *blob) {
 	}
 }
 
-void print_task(struct Task* task) {
+static void print_task(struct Task* task) {
 	int indent;
 	struct TraceNode *tn = to_tracenode(task);
 	log_info("%s Pages: %d (peak: %d)\n",
@@ -618,21 +617,138 @@ void print_task(struct Task* task) {
 	}
 }
 
-void generate_stack_statistic(struct HashMap *task_map, int task_limit) {
+static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limit)
+{
+	if (memtrac_json)
+		log_info("[\n");
+	for (int i = 0; i < nr_tasks && nr_pages_limit > 0; i++) {
+		if (memtrac_json) {
+			print_task_json(tasks[i], i + 1 == nr_tasks);
+		} else {
+			print_task(tasks[i]);
+		}
+
+		if (memtrac_sort_alloc)
+			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc;
+		else if (memtrac_sort_peak)
+			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc_peak;
+	}
+	if (memtrac_json)
+		log_info("]\n");
+}
+
+/*
+ * Collect top 10 modules, and their top 3 alloc stack
+ */
+static struct module_usage {
+	char *name;
+	long pages;
+	struct TraceNode *top_node[3];
+	struct module_usage *next;
+} *module_usages;
+
+static int module_counter;
+
+static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
+{
+	struct Callsite *cs = container_of(tnode, struct Callsite, node);
+
+	char *symbol = _find_symbol(cs->addr);
+	char *module_name = strstr(symbol, "[");
+	struct module_usage *parent_module = (struct module_usage*)blob;
+
+	if (module_name) {
+		struct module_usage **tail = &module_usages;
+
+		if (parent_module) {
+			if (strcmp(module_name, parent_module->name) != 0) {
+				if (to_tracenode(cs)->record->pages_alloc > (parent_module->pages * 85 / 100)) {
+					tail = &parent_module;
+					free((*tail)->name);
+					(*tail)->name = strdup(module_name);
+				}
+			}
+		} else {
+			while (*tail) {
+				if ((*tail)->name != NULL) {
+					if (strcmp(module_name, (*tail)->name) == 0) {
+						break;
+					}
+				}
+				tail = &(*tail)->next;
+			}
+
+			if (!*tail) {
+				*tail = calloc(1, sizeof(struct module_usage));
+				(*tail)->name = strdup(module_name);
+			}
+
+			if (memtrac_sort_alloc)
+				(*tail)->pages += to_tracenode(cs)->record->pages_alloc;
+			else if (memtrac_sort_peak)
+				(*tail)->pages += to_tracenode(cs)->record->pages_alloc_peak;
+		}
+
+		for (int i = 0; i < 3; ++i) {
+			if (!(*tail)->top_node[i]) {
+				(*tail)->top_node[i] = to_tracenode(cs);
+			} else if ((*tail)->top_node[i]->record->pages_alloc < to_tracenode(cs)->record->pages_alloc) {
+				(*tail)->top_node[i] = to_tracenode(cs);
+				for (int j = i + 1; j < 3; ++j, ++i) {
+					(*tail)->top_node[j] = (*tail)->top_node[i];
+				}
+			}
+		}
+
+		if (to_tracenode(cs)->child_callsites) {
+			iter_tree_node(&to_tracenode(cs)->child_callsites->node, check_treenode_for_module, (*tail));
+		}
+	} else {
+		if (to_tracenode(cs)->child_callsites) {
+			iter_tree_node(&to_tracenode(cs)->child_callsites->node, check_treenode_for_module, blob);
+		}
+	}
+}
+
+static void print_summary(struct Task *tasks[], int nr_tasks)
+{
+	int indent = 2;
+	struct TreeNode *callsite_root;
+
+	for (int i = 0; i < nr_tasks; i++) {
+		if (to_tracenode(tasks[i])->child_callsites) {
+			callsite_root = &to_tracenode(tasks[i])->child_callsites->node;
+			iter_tree_node(callsite_root, check_treenode_for_module, NULL);
+		}
+	}
+
+	while (module_usages) {
+		log_info("Module %s using %d pages", module_usages->name, module_usages->pages);
+		for (int i = 0; i < 3; ++i) {
+			if (module_usages->top_node[i])
+				print_callsite(&to_callsite(module_usages->top_node[i])->node, &indent);
+		}
+		module_usages = module_usages->next;
+	}
+}
+
+void final_report(struct HashMap *task_map, int task_limit) {
+	long nr_pages_limit;
 	struct Task **tasks;
+
+	if (!task_limit) {
+		task_limit = total_task_num;
+	}
+
+	nr_pages_limit = page_alloc_counter - page_free_counter;
+	nr_pages_limit = (nr_pages_limit * memtrac_throttle + 99) / 100;
 
 	_load_kallsyms();
 	tasks = sort_tasks(task_map);
 
-	if (memtrac_json)
-		log_info("[\n");
-	for (int i = 0; tasks[i] != NULL && i < task_limit; i++) {
-		if (memtrac_json) {
-			print_task_json(tasks[i], tasks[i + 1] == NULL || i + 1 == task_limit);
-		} else {
-			print_task(tasks[i]);
-		}
+	if (memtrac_summary) {
+		print_summary(tasks, task_limit);
+	} else {
+		print_details(tasks, task_limit, nr_pages_limit);
 	}
-	if (memtrac_json)
-		log_info("]\n");
 }

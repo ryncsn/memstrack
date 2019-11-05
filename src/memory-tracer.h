@@ -6,6 +6,10 @@ extern int memtrac_page;
 extern int memtrac_ftrace;
 extern int memtrac_json;
 extern int memtrac_print;
+extern int memtrac_throttle;
+extern int memtrac_summary;
+extern int memtrac_sort_alloc;
+extern int memtrac_sort_peak;
 extern unsigned int page_size;
 
 #define LOG_LVL_DEBUG 0
