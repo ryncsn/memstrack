@@ -23,6 +23,6 @@ if ! [ -f "$trace_base/tracing/trace" ]; then
         return 1
 fi
 
-memory-tracer --page --perf > /memory-debug & disown
+memory-tracer --page --perf --throttle 80 --sort-by peak > /memory-debug & disown
 
 sleep 5

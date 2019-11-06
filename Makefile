@@ -42,3 +42,4 @@ dracut-module-install: install
 	cp misc/99memory-tracer/module-setup.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/module-setup.sh
 	cp misc/99memory-tracer/start-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/start-tracing.sh
 	cp misc/99memory-tracer/stop-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/stop-tracing.sh
+	cp misc/99memory-tracer/memory-tracer.service $(DESTDIR)$(dracutlibdir)/modules.d/99memory-tracer/memory-tracer.service
