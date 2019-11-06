@@ -35,12 +35,6 @@ static struct TraceNode* __process_stacktrace(
 {
 	struct TraceNode *tp = NULL;
 
-	// TODO: currently stacktrace is ignore for freeing event
-	if (event->pages_alloc < 0) {
-		update_record(NULL, event, NULL);
-		return NULL;
-	}
-
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
 		if (0xffffffffffffff80 == *((&callchain->ips) + ((int)callchain->nr - i))) {
@@ -133,7 +127,6 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 
 int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* header) {
 	struct PageEvent event;
-	struct Task *task;
 
 	struct perf_sample_fix *body;
 	struct perf_sample_callchain *callchain;
@@ -142,7 +135,6 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	task = get_or_new_task(&TaskMap, NULL, body->pid);
 	event.pages_alloc = -1;
 	event.pfn = raw_data->pfn;
 
@@ -150,7 +142,8 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 		event.pages_alloc *= 2;
 	}
 
-	__process_stacktrace(callchain, task, &event);
+	// TODO: not tracking task here
+	update_record(NULL, &event, NULL);
 
 	return 0;
 }
