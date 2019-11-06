@@ -565,11 +565,11 @@ static void print_task_json(struct Task* task, int last_task) {
 	}
 }
 
-static void print_callsite(struct TreeNode* tnode, void *blob) {
-	int current_indent = *(int*)blob;
+static void print_callsite(struct TreeNode* tnode, int current_indent, int substack_limit, int throttle) {
 	int next_indent = current_indent + 2;
-
 	char* padding = calloc(current_indent + 1, sizeof(char));
+	long page_limit;
+
 	for (int i = 0; i < current_indent; ++i) {
 		padding[i] = ' ';
 	}
@@ -589,11 +589,29 @@ static void print_callsite(struct TreeNode* tnode, void *blob) {
 			tracenode->record->pages_alloc,
 			tracenode->record->pages_alloc_peak);
 
+	if (memtrac_sort_peak)
+		page_limit = tracenode->record->pages_alloc_peak;
+	else if (memtrac_sort_alloc)
+		page_limit = tracenode->record->pages_alloc;
+
+	if (throttle) {
+		page_limit = page_limit * throttle / 100;
+	}
+
 	if (tracenode->child_callsites) {
 		struct TreeNode **nodes;
+		struct Callsite * cs;
 		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
-		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], &next_indent);
+		for (int i = 0; nodes[i] != NULL &&
+				(substack_limit < 0 || i < substack_limit) &&
+				page_limit; i++) {
+			print_callsite(nodes[i], next_indent, substack_limit, throttle);
+			cs = container_of(nodes[i], struct Callsite, node);
+
+			if (memtrac_sort_peak)
+				page_limit -= to_tracenode(cs)->record->pages_alloc_peak;
+			else if (memtrac_sort_alloc)
+				page_limit -= to_tracenode(cs)->record->pages_alloc;
 		}
 		free(nodes);
 	}
@@ -611,7 +629,7 @@ static void print_task(struct Task* task) {
 		indent = 2;
 		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], &indent);
+			print_callsite(nodes[i], indent, -1, memtrac_throttle);
 		}
 		free(nodes);
 	}
@@ -726,7 +744,7 @@ static void print_summary(struct Task *tasks[], int nr_tasks)
 		log_info("Module %s using %d pages", module_usages->name, module_usages->pages);
 		for (int i = 0; i < 3; ++i) {
 			if (module_usages->top_node[i])
-				print_callsite(&to_callsite(module_usages->top_node[i])->node, &indent);
+				print_callsite(&to_callsite(module_usages->top_node[i])->node, indent, 1, memtrac_throttle);
 		}
 		module_usages = module_usages->next;
 	}
