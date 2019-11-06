@@ -380,7 +380,7 @@ static char* _find_symbol(unsigned long long addr) {
 	struct Symbol *closest = head;
 	while (head != NULL) {
 		if (head->addr < addr) {
-			if (head->addr - addr > closest->addr - addr) {
+			if (head->addr > closest->addr) {
 				closest = head;
 			}
 		}
@@ -761,8 +761,8 @@ void final_report(struct HashMap *task_map, int task_limit) {
 	nr_pages_limit = page_alloc_counter - page_free_counter;
 	nr_pages_limit = (nr_pages_limit * memtrac_throttle + 99) / 100;
 
-	_load_kallsyms();
 	tasks = sort_tasks(task_map);
+	_load_kallsyms();
 
 	if (memtrac_summary) {
 		print_summary(tasks, task_limit);
