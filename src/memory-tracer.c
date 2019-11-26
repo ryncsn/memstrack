@@ -48,24 +48,12 @@ int memtrac_log (int level, const char *__restrict fmt, ...){
 	return ret;
 }
 
-void task_map_debug() {
-	log_debug("Task Bucket usage:\n");
-	for (int i = 0; i < HASH_BUCKET; i++) {
-		if (TaskMap.buckets[i] != NULL) {
-			log_debug("Bucket %d in use\n", i);
-		}
-	}
-}
-
 void do_exit() {
 	if (memtrac_ftrace) {
 		ftrace_handling_clean();
 	}
 	if (memtrac_perf) {
 		perf_handling_clean();
-	}
-	if (memtrac_debug) {
-		task_map_debug();
 	}
 	final_report(&TaskMap, 0);
 	exit(0);
@@ -208,10 +196,6 @@ int main(int argc, char **argv) {
 	if (!memtrac_page && !memtrac_slab) {
 		log_error("At least one of --page and --slab is required.\n");
 		exit(EINVAL);
-	}
-
-	if (memtrac_debug) {
-		log_debug("Debug mode is on\n");
 	}
 
 	if (getuid() != 0) {
