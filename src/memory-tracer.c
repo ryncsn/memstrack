@@ -215,13 +215,11 @@ int main(int argc, char **argv) {
 	} else if (memtrac_ftrace) {
 		err = ftrace_handling_init();
 		if (err) {
-			log_error("Failed initializing perf event buffer: %s!", strerror(err));
+			log_error("Failed to open ftrace: %s!", strerror(err));
 			exit(err);
 		}
 		signal(SIGINT, on_signal);
 		do_process_ftrace();
-	} else if (0) {
-		// TODO
 	}
 	do_exit();
 }
