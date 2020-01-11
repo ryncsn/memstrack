@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <malloc.h>
 
+#include <sys/resource.h>
+
 #include "perf-handler.h"
 #include "ftrace-handler.h"
 #include "memory-tracer.h"
@@ -48,7 +50,7 @@ int memtrac_log (int level, const char *__restrict fmt, ...){
 	return ret;
 }
 
-void do_exit() {
+static void do_exit() {
 	if (memtrac_ftrace) {
 		ftrace_handling_clean();
 	}
@@ -59,19 +61,19 @@ void do_exit() {
 	exit(0);
 }
 
-void on_signal(int signal) {
+static void on_signal(int signal) {
 	log_debug("Exiting on signal %d\n", signal);
 	do_exit();
 }
 
-void do_process_perf() {
+static void do_process_perf() {
 	perf_handling_start();
 	while (1) {
 		perf_handling_process();
 	}
 }
 
-void do_process_ftrace() {
+static void do_process_ftrace() {
 	while (1) {
 		ftrace_handling_process();
 	}
@@ -97,7 +99,7 @@ static struct option long_options[] =
 };
 
 
-void display_usage() {
+static void display_usage() {
 	log_info("Usage: memory-tracer [OPTION]... \n");
 	log_info("    --debug		Print debug messages. \n");
 	log_info("    --ftrace		Use ftrace for tracing, poor performance but should always work. \n");
@@ -119,10 +121,25 @@ void display_usage() {
 	log_info("    --help 		Print this message. \n");
 }
 
-void tune_glibc() {
+static void tune_glibc() {
 	mallopt(M_TOP_PAD, 4096);
 	mallopt(M_TRIM_THRESHOLD, 4096);
 }
+
+static void set_high_priority() {
+	int which = PRIO_PROCESS;
+	int priority = -20;
+	int ret;
+	id_t pid;
+
+	pid = getpid();
+	ret = setpriority(which, pid, priority);
+
+	if (ret) {
+		log_error("Failed to set high priority with %s.\n", strerror(ret));
+	}
+}
+
 
 int main(int argc, char **argv) {
 	tune_glibc();
