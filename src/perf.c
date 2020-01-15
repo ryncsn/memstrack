@@ -10,7 +10,7 @@
 #include <sys/sysinfo.h>
 #include <linux/perf_event.h>
 
-#include "memory-tracer.h"
+#include "memstrack.h"
 #include "perf.h"
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"

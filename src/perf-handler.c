@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <poll.h>
 
-#include "memory-tracer.h"
+#include "memstrack.h"
 #include "tracing.h"
 #include "perf.h"
 
@@ -149,11 +149,11 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 }
 
 static int perf_tracks_page() {
-	return memtrac_page;
+	return m_page;
 }
 
 static int perf_tracks_slab() {
-	return memtrac_slab;
+	return m_slab;
 }
 
 static struct perf_event_entry {

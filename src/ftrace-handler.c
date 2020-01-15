@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "memory-tracer.h"
+#include "memstrack.h"
 #include "tracing.h"
 #include "ftrace.h"
 
@@ -64,10 +64,10 @@ static struct TraceNode* __process_stacktrace() {
 int ftrace_handling_init() {
 	char setup_events[1024], *print_header;
 	print_header = setup_events;
-	if (memtrac_slab) {
+	if (m_slab) {
 		print_header += sprintf(print_header, "kmem:kmem_cache_alloc ");
 	}
-	if (memtrac_page) {
+	if (m_page) {
 		print_header += sprintf(print_header, "kmem:mm_page_alloc ");
 	}
 	return ftrace_setup(&ftrace_file, setup_events);

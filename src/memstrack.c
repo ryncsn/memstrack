@@ -13,29 +13,29 @@
 
 #include "perf-handler.h"
 #include "ftrace-handler.h"
-#include "memory-tracer.h"
+#include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
 
-int memtrac_debug;
-int memtrac_human;
-int memtrac_perf;
-int memtrac_ftrace;
-int memtrac_json;
-int memtrac_slab;
-int memtrac_page;
-int memtrac_show_misc;
-int memtrac_throttle = 100;
-int memtrac_summary;
-int memtrac_sort_alloc = 1;
-int memtrac_sort_peak = 0;
+int m_debug;
+int m_human;
+int m_perf;
+int m_ftrace;
+int m_json;
+int m_slab;
+int m_page;
+int m_show_misc;
+int m_throttle = 100;
+int m_summary;
+int m_sort_alloc = 1;
+int m_sort_peak = 0;
 
 unsigned int page_size;
 
-char* memtrac_perf_base;
+char* m_perf_base;
 
-int memtrac_log (int level, const char *__restrict fmt, ...){
-	if (!memtrac_debug && level <= LOG_LVL_DEBUG) {
+int m_log (int level, const char *__restrict fmt, ...){
+	if (!m_debug && level <= LOG_LVL_DEBUG) {
 		return 0;
 	}
 	int ret;
@@ -51,10 +51,10 @@ int memtrac_log (int level, const char *__restrict fmt, ...){
 }
 
 static void do_exit() {
-	if (memtrac_ftrace) {
+	if (m_ftrace) {
 		ftrace_handling_clean();
 	}
-	if (memtrac_perf) {
+	if (m_perf) {
 		perf_handling_clean();
 	}
 	final_report(&TaskMap, 0);
@@ -82,13 +82,13 @@ static void do_process_ftrace() {
 static struct option long_options[] =
 {
 	/* These options set a flag. */
-	{"ftrace",		no_argument,	&memtrac_ftrace,	1},
-	{"perf",		no_argument,	&memtrac_perf,		1},
-	{"slab",		no_argument,	&memtrac_slab,		1},
-	{"page",		no_argument,	&memtrac_page,		1},
-	{"json",		no_argument,	&memtrac_json,		1},
-	{"show-misc",		no_argument,	&memtrac_show_misc,	1},
-	{"summary",		no_argument,	&memtrac_summary,	1},
+	{"ftrace",		no_argument,	&m_ftrace,	1},
+	{"perf",		no_argument,	&m_perf,		1},
+	{"slab",		no_argument,	&m_slab,		1},
+	{"page",		no_argument,	&m_page,		1},
+	{"json",		no_argument,	&m_json,		1},
+	{"show-misc",		no_argument,	&m_show_misc,	1},
+	{"summary",		no_argument,	&m_summary,	1},
 	{"debug",		no_argument,		0,		'd'},
 	// {"human-readable",	no_argument,		0,		'h'},
 	// {"trace-base",	required_argument,	0,		'b'},
@@ -100,7 +100,7 @@ static struct option long_options[] =
 
 
 static void display_usage() {
-	log_info("Usage: memory-tracer [OPTION]... \n");
+	log_info("Usage: memstrack [OPTION]... \n");
 	log_info("    --debug		Print debug messages. \n");
 	log_info("    --ftrace		Use ftrace for tracing, poor performance but should always work. \n");
 	log_info("    --perf		Use binary perf for tracing, may require CONFIG_FRAME_POINTER enabled on older kernel (before 5.1). \n");
@@ -163,29 +163,29 @@ int main(int argc, char **argv) {
 				// Flag setted, nothing to do
 				break;
 			case 'd':
-				memtrac_debug = 1;
+				m_debug = 1;
 				break;
 			case 'h':
-				memtrac_human = 1;
+				m_human = 1;
 				break;
 			case 'b':
-				memtrac_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
-				strcpy(memtrac_perf_base, optarg);
+				m_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
+				strcpy(m_perf_base, optarg);
 				break;
 			case 't':
-				memtrac_throttle = atoi(optarg);
-				if (memtrac_throttle < 0 || memtrac_throttle > 100) {
+				m_throttle = atoi(optarg);
+				if (m_throttle < 0 || m_throttle > 100) {
 					log_error("--throttle expects an integer between 0 - 100!\n");
 					exit(1);
 				}
 				break;
 			case 's':
 				if (strcmp(optarg, "peak")) {
-					memtrac_sort_peak = 1;
-					memtrac_sort_alloc = 0;
+					m_sort_peak = 1;
+					m_sort_alloc = 0;
 				} else if (strcmp(optarg, "alloc")) {
-					memtrac_sort_peak = 0;
-					memtrac_sort_alloc = 1;
+					m_sort_peak = 0;
+					m_sort_alloc = 1;
 				}
 				break;
 			case '?':
@@ -197,20 +197,20 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (memtrac_show_misc) {
+	if (m_show_misc) {
 		print_slab_usage();
 	}
 
-	if (memtrac_perf && memtrac_ftrace) {
+	if (m_perf && m_ftrace) {
 		log_error("Can't have --ftrace and --perf set together!\n");
 		exit(EINVAL);
 	}
 
-	if (!memtrac_perf && !memtrac_ftrace) {
-		memtrac_perf = 1;  // Use perf by default
+	if (!m_perf && !m_ftrace) {
+		m_perf = 1;  // Use perf by default
 	}
 
-	if (!memtrac_page && !memtrac_slab) {
+	if (!m_page && !m_slab) {
 		log_error("At least one of --page and --slab is required.\n");
 		exit(EINVAL);
 	}
@@ -221,7 +221,7 @@ int main(int argc, char **argv) {
 	}
 
 	int err;
-	if (memtrac_perf) {
+	if (m_perf) {
 		err = perf_handling_init();
 		if (err) {
 			log_error("Failed initializing perf event buffer: %s!", strerror(err));
@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
 		}
 		signal(SIGINT, on_signal);
 		do_process_perf();
-	} else if (memtrac_ftrace) {
+	} else if (m_ftrace) {
 		err = ftrace_handling_init();
 		if (err) {
 			log_error("Failed to open ftrace: %s!", strerror(err));

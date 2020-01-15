@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "memory-tracer.h"
+#include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
 
@@ -589,9 +589,9 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 			tracenode->record->pages_alloc,
 			tracenode->record->pages_alloc_peak);
 
-	if (memtrac_sort_peak)
+	if (m_sort_peak)
 		page_limit = tracenode->record->pages_alloc_peak;
-	else if (memtrac_sort_alloc)
+	else if (m_sort_alloc)
 		page_limit = tracenode->record->pages_alloc;
 
 	if (throttle) {
@@ -608,9 +608,9 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 			print_callsite(nodes[i], next_indent, substack_limit, throttle);
 			cs = container_of(nodes[i], struct Callsite, node);
 
-			if (memtrac_sort_peak)
+			if (m_sort_peak)
 				page_limit -= to_tracenode(cs)->record->pages_alloc_peak;
-			else if (memtrac_sort_alloc)
+			else if (m_sort_alloc)
 				page_limit -= to_tracenode(cs)->record->pages_alloc;
 		}
 		free(nodes);
@@ -629,7 +629,7 @@ static void print_task(struct Task* task) {
 		indent = 2;
 		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], indent, -1, memtrac_throttle);
+			print_callsite(nodes[i], indent, -1, m_throttle);
 		}
 		free(nodes);
 	}
@@ -637,21 +637,21 @@ static void print_task(struct Task* task) {
 
 static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limit)
 {
-	if (memtrac_json)
+	if (m_json)
 		log_info("[\n");
 	for (int i = 0; i < nr_tasks && nr_pages_limit > 0; i++) {
-		if (memtrac_json) {
+		if (m_json) {
 			print_task_json(tasks[i], i + 1 == nr_tasks);
 		} else {
 			print_task(tasks[i]);
 		}
 
-		if (memtrac_sort_alloc)
+		if (m_sort_alloc)
 			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc;
-		else if (memtrac_sort_peak)
+		else if (m_sort_peak)
 			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc_peak;
 	}
-	if (memtrac_json)
+	if (m_json)
 		log_info("]\n");
 }
 
@@ -701,9 +701,9 @@ static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 				(*tail)->name = strdup(module_name);
 			}
 
-			if (memtrac_sort_alloc)
+			if (m_sort_alloc)
 				(*tail)->pages += to_tracenode(cs)->record->pages_alloc;
-			else if (memtrac_sort_peak)
+			else if (m_sort_peak)
 				(*tail)->pages += to_tracenode(cs)->record->pages_alloc_peak;
 		}
 
@@ -744,7 +744,7 @@ static void print_summary(struct Task *tasks[], int nr_tasks)
 		log_info("Module %s using %d pages", module_usages->name, module_usages->pages);
 		for (int i = 0; i < 3; ++i) {
 			if (module_usages->top_node[i])
-				print_callsite(&to_callsite(module_usages->top_node[i])->node, indent, 1, memtrac_throttle);
+				print_callsite(&to_callsite(module_usages->top_node[i])->node, indent, 1, m_throttle);
 		}
 		module_usages = module_usages->next;
 	}
@@ -759,12 +759,12 @@ void final_report(struct HashMap *task_map, int task_limit) {
 	}
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * memtrac_throttle + 99) / 100;
+	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
 	tasks = sort_tasks(task_map);
 	_load_kallsyms();
 
-	if (memtrac_summary) {
+	if (m_summary) {
 		print_summary(tasks, task_limit);
 	} else {
 		print_details(tasks, task_limit, nr_pages_limit);
