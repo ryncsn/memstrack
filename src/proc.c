@@ -105,7 +105,7 @@ int parse_keyword(int until, FILE *file, char *buf, const char* keyword, const c
 	}
 
 	if (!read) {
-		log_info("Failed to read %s\n", keyword);
+		log_error("Failed to read %s\n", keyword);
 		return -EAGAIN;
 	}
 
