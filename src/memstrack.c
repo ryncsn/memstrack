@@ -33,7 +33,7 @@ char* m_output_path;
 FILE* m_output;
 
 // TODO
-int m_tui;
+int m_tui = 1;
 int m_slab;
 
 unsigned int page_size;
@@ -63,10 +63,10 @@ static void do_exit() {
 	if (m_perf) {
 		perf_handling_clean();
 	}
+	final_report(&TaskMap, 0);
 	if (m_output != stdout) {
 		fclose(m_output);
 	}
-	final_report(&TaskMap, 0);
 	exit(0);
 }
 
@@ -148,9 +148,41 @@ static void set_high_priority() {
 }
 
 
+static void loop_tracing(void) {
+	int err;
+	log_warn("Tracing memory allocations, Press ^C to interrupt ...\n");
+
+	if (m_perf) {
+		err = perf_handling_init();
+		if (err) {
+			log_error("Failed initializing perf event buffer: %s!", strerror(err));
+			exit(err);
+		}
+		signal(SIGINT, on_signal);
+		do_process_perf();
+	} else if (m_ftrace) {
+		err = ftrace_handling_init();
+		if (err) {
+			log_error("Failed to open ftrace: %s!", strerror(err));
+			exit(err);
+		}
+		signal(SIGINT, on_signal);
+		do_process_ftrace();
+	}
+}
+
+static void loop_tui(void) {
+	return;
+}
+
 int main(int argc, char **argv) {
 	tune_glibc();
 	m_output = stdout;
+
+	if (getuid() != 0) {
+		log_error("This tool requires root permission to work.\n");
+		exit(EPERM);
+	}
 
 	while (1) {
 		int opt;
@@ -236,28 +268,8 @@ int main(int argc, char **argv) {
 		print_slab_usage();
 	}
 
-	if (getuid() != 0) {
-		log_error("This tool requires root permission to work.\n");
-		exit(EPERM);
-	}
-
-	int err;
-	if (m_perf) {
-		err = perf_handling_init();
-		if (err) {
-			log_error("Failed initializing perf event buffer: %s!", strerror(err));
-			exit(err);
-		}
-		signal(SIGINT, on_signal);
-		do_process_perf();
-	} else if (m_ftrace) {
-		err = ftrace_handling_init();
-		if (err) {
-			log_error("Failed to open ftrace: %s!", strerror(err));
-			exit(err);
-		}
-		signal(SIGINT, on_signal);
-		do_process_ftrace();
-	}
-	do_exit();
+	if (m_tui)
+		loop_tracing();
+	else
+		loop_tui();
 }
