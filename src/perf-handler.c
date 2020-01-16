@@ -169,9 +169,9 @@ static struct perf_event_entry {
 	{ "kmem:kmem_cache_free", 	perf_handle_kmem_cache_free, 	perf_tracks_slab },
 };
 
-const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_entry);
+struct pollfd *perf_fds;
 
-static struct pollfd *perf_fds;
+const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_entry);
 
 int perf_handling_init() {
 	int err;
@@ -185,7 +185,7 @@ int perf_handling_init() {
 		}
 	}
 
-	perf_events = (struct PerfEvent*)malloc(sizeof(struct PerfEvent) * perf_events_num);
+	perf_events = (struct PerfEvent*)malloc(perf_events_num * sizeof(struct PerfEvent));
 
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
 		for (int i = 0; i < perf_event_entry_number; i++){
@@ -247,9 +247,10 @@ int perf_handling_start() {
 	return err;
 }
 
-int perf_handling_process() {
+int perf_handling_process_nb() {
 	int err = 0, i;
-	poll(perf_fds, perf_events_num, 250);
+
+	trace_count ++;
 	for (i = 0; i < perf_events_num; i++) {
 		err = perf_event_process(perf_events + i);
 		if (err) {
@@ -257,4 +258,9 @@ int perf_handling_process() {
 		}
 	}
 	return err;
+}
+
+int perf_handling_process() {
+	poll(perf_fds, perf_events_num, 250);
+	return perf_handling_process_nb();
 }

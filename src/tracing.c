@@ -385,7 +385,6 @@ void load_kallsyms() {
 		sscanf(addr_arg, "%lx", &symbol->symbol.addr);
 		symbol->symbol.sym_name = malloc(strlen(symbol_arg) + 1);
 		strcpy(symbol->symbol.sym_name, symbol_arg);
-
 		*sym_buf_tail_p = symbol;
 		sym_buf_tail_p = &symbol->next;
 
@@ -453,6 +452,25 @@ static void collect_child_info(struct TraceNode* tracenode) {
 	}
 	if (tracenode->child_callsites) {
 		iter_tree_node(&tracenode->child_callsites->node, populate_child_callsites, tracenode->record);
+	}
+}
+
+static void callsite_neibor_iterator(struct TreeNode* tn, void *blob)
+{
+	void (*handler)(struct TraceNode *node, void *blob) = blob;
+
+	struct TraceNode *tn = to_tracenode(container_of(tn, struct Callsite, node));
+
+}
+
+void iter_callsite_leaf(struct TraceNode* tracenode,
+		void (*handler)(struct TraceNode *node, void *blob),
+		void *blob) {
+	if (tracenode->child_callsites == NULL) {
+		handler(tracenode, blob);
+	} else {
+		iter_tree_node(&tracenode->child_callsites->node,
+				populate_child_callsites, tracenode->record);
 	}
 }
 

@@ -7,38 +7,42 @@
 
 extern struct HashMap TaskMap;
 
+extern unsigned long trace_count;
+
 struct Record {
 	long pages_alloc;
 	long pages_alloc_peak;
 };
 
 struct TraceNode {
-	union {
-		struct TraceNode *parent;
-		struct TraceNode *parent_callsite;
-		struct TraceNode *parent_task;
-	};
-	union {
-		struct Task *child_tasks;
-		struct Callsite *child_callsites;
-	};
+	struct TraceNode *parent;
+	// TODO: Only leaf have record,
+	// union {
+	struct Callsite *child_callsites;
 	struct Record *record;
+	// };
 };
 
 struct Callsite {
 	struct TraceNode tracenode;
 	struct TreeNode node;
 
-	char *symbol;
-	unsigned long addr;
+	// TODO: Only keep symbol or addr
+	// union {
+		char *symbol;
+		unsigned long addr;
+	// };
 };
 
 struct Task {
 	struct TraceNode tracenode;
 	struct HashNode node;
 
+	// TODO: Only keep pid or name
+	// union {
 	char *task_name;
 	int pid;
+	// };
 };
 
 struct PageRecord {
@@ -66,6 +70,8 @@ struct PageEvent {
 
 void mem_tracing_init();
 void update_record(struct TraceNode *record, struct PageEvent *pe, struct AllocEvent *ae);
+void load_kallsyms();
+char* kaddr_to_sym(unsigned long long addr);
 
 struct Callsite* get_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr);
 struct Callsite* insert_child_callsite(struct TraceNode *root, struct Callsite *src);

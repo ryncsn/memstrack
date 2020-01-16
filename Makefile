@@ -9,6 +9,7 @@ dracutlibdir ?= ${prefix}/lib/dracut
 
 CC = gcc
 CFLAGS = -std=c11 -g -O2
+LDFLAGS = -lncurses
 MEMORY_TRACER_OBJ = src/memstrack.o src/tracing.o src/utils.o src/perf.o src/perf-handler.o src/ftrace.o src/ftrace-handler.o src/proc.o
 
 all: memstrack
