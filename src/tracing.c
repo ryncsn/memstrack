@@ -39,13 +39,14 @@ struct HashMap TaskMap = {
 
 struct PageRecord *page_map;
 
-static struct Symbol {
-	unsigned long long addr;
+static struct symbol {
+	unsigned long addr;
 	char type;
-	char* module;
+	char* module_name;
 	char* sym_name;
-	struct Symbol *next;
-} *Symbols;
+} *symbol_table;
+
+int symbol_table_len;
 
 static char* get_process_name_by_pid(const int pid)
 {
@@ -340,58 +341,92 @@ struct json_marker {
 	int count;
 };
 
-static void _load_kallsyms() {
+static int comp_symbol(const void *x, const void *y) {
+	struct symbol *sa = (struct symbol*)x;
+	struct symbol *sb = (struct symbol*)y;
+
+	return (sa->addr - sb->addr);
+}
+
+void load_kallsyms() {
+	struct symbol_buf {
+		struct symbol symbol;
+		struct symbol_buf *next;
+	} *symbol_buf_head, **sym_buf_tail_p, *symbol_buf_tmp;
+
+	sym_buf_tail_p = &symbol_buf_head;
+	symbol_table_len = 0;
+	if (symbol_table)
+		free(symbol_table);
+
 	FILE *proc_kallsyms = fopen("/proc/kallsyms", "r");
-	char kallsyms_line[4096];
-	struct Symbol **sym_tail = &Symbols;
-	while(fgets(kallsyms_line, 4096, proc_kallsyms)) {
-		char *addr_arg = strtok(kallsyms_line, " ");
+	char read_buf[4096];
+
+	while(fgets(read_buf, 4096, proc_kallsyms)) {
+		char *addr_arg = strtok(read_buf, " ");
 		char *type_arg = strtok(NULL, " ");
 		char *symbol_arg = strtok(NULL, " ");
 		char *module_arg = strtok(NULL, " ");
 
-		struct Symbol *symbol = malloc(sizeof(struct Symbol));
+		struct symbol_buf *symbol = malloc(sizeof(struct symbol_buf));
 		if (module_arg) {
 			module_arg[strlen(module_arg) - 1] = '\0';
 			while (module_arg[0] == ' ') {
 				module_arg++;
 			}
-			symbol->module = malloc(strlen(module_arg) + 1);
-			strcpy(symbol->module, module_arg);
+			symbol->symbol.module_name = malloc(strlen(module_arg) + 1);
+			strcpy(symbol->symbol.module_name, module_arg);
 		} else {
 			symbol_arg[strlen(symbol_arg) - 1] = '\0';
-			symbol->module = NULL;
+			symbol->symbol.module_name = NULL;
 		}
 
-		symbol->type = *type_arg;
-		sscanf(addr_arg, "%llx", &symbol->addr);
-		symbol->sym_name = malloc(strlen(symbol_arg) + 1);
-		strcpy(symbol->sym_name, symbol_arg);
-		symbol->next = NULL;
+		symbol->symbol.type = *type_arg;
+		sscanf(addr_arg, "%lx", &symbol->symbol.addr);
+		symbol->symbol.sym_name = malloc(strlen(symbol_arg) + 1);
+		strcpy(symbol->symbol.sym_name, symbol_arg);
 
-		*sym_tail = symbol;
-		sym_tail = &symbol->next;
+		*sym_buf_tail_p = symbol;
+		sym_buf_tail_p = &symbol->next;
+
+		symbol_table_len ++;
 	}
+
+	symbol_table = malloc(sizeof(struct symbol) * symbol_table_len);
+	for (int i = 0; i < symbol_table_len; ++i) {
+		symbol_table[i].addr = symbol_buf_head->symbol.addr;
+		symbol_table[i].module_name = symbol_buf_head->symbol.module_name;
+		symbol_table[i].sym_name = symbol_buf_head->symbol.sym_name;
+		symbol_table[i].type = symbol_buf_head->symbol.type;
+		symbol_buf_tmp = symbol_buf_head->next;
+		free(symbol_buf_head);
+		symbol_buf_head = symbol_buf_tmp;
+	}
+
+	qsort((void*)symbol_table, symbol_table_len, sizeof(struct symbol), comp_symbol);
 }
 
-static char* _find_symbol(unsigned long long addr) {
-	static char _format_buffer[4096];
-	struct Symbol *head = Symbols;
-	struct Symbol *closest = head;
-	while (head != NULL) {
-		if (head->addr < addr) {
-			if (head->addr > closest->addr) {
-				closest = head;
-			}
+char* kaddr_to_sym(unsigned long long addr) {
+	static char str_buffer[4096];
+	int left = 0, right = symbol_table_len, mid;
+	do {
+		mid = (left + right) / 2;
+		if (mid == left || mid == right) {
+			mid = left;
+			break;
 		}
-		head = head->next;
-	}
-	if (closest) {
-		sprintf(_format_buffer, "%s %s (0x%llx)", closest->sym_name, closest->module, addr);
-	} else {
-		sprintf(_format_buffer, "0x%llx", addr);
-	}
-	return _format_buffer;
+
+		if (symbol_table[mid].addr > addr) {
+			right = mid;
+		} else if (symbol_table[mid].addr < addr) {
+			left = mid;
+		} else {
+			break;
+		}
+	} while (1);
+
+	sprintf(str_buffer, "%s %s (0x%llx)", symbol_table[mid].sym_name, symbol_table[mid].module_name, addr);
+	return str_buffer;
 };
 
 /*
@@ -517,7 +552,7 @@ static void print_callsite_json(struct TreeNode* tnode, void *blob) {
 	if (callsite->symbol) {
 		log_info("%s\"%s\": ", padding, callsite->symbol);
 	} else if (callsite->addr) {
-		log_info("%s\"%s\": ", padding, _find_symbol(callsite->addr));
+		log_info("%s\"%s\": ", padding, kaddr_to_sym(callsite->addr));
 	} else {
 		log_info("%s\"unknown\": ", padding);
 	}
@@ -580,7 +615,7 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 	if (callsite->symbol) {
 		log_info("%s%s", padding, callsite->symbol);
 	} else if (callsite->addr) {
-		log_info("%s%s", padding, _find_symbol(callsite->addr));
+		log_info("%s%s", padding, kaddr_to_sym(callsite->addr));
 	} else {
 		log_info("%s(unknown)", padding);
 	}
@@ -671,8 +706,7 @@ static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 {
 	struct Callsite *cs = container_of(tnode, struct Callsite, node);
 
-	char *symbol = _find_symbol(cs->addr);
-	char *module_name = strstr(symbol, "[");
+	char *module_name = strstr(kaddr_to_sym(cs->addr), "[");
 	struct module_usage *parent_module = (struct module_usage*)blob;
 
 	if (module_name) {
@@ -762,7 +796,7 @@ void final_report(struct HashMap *task_map, int task_limit) {
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
 	tasks = sort_tasks(task_map);
-	_load_kallsyms();
+	load_kallsyms();
 
 	if (m_summary) {
 		print_summary(tasks, task_limit);
