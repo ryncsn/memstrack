@@ -175,6 +175,7 @@ static struct pollfd *perf_fds;
 
 int perf_handling_init() {
 	int err;
+	int count = 0;
 	int cpu_num = get_perf_cpu_num();
 	const struct perf_event_entry *event;
 
@@ -184,9 +185,8 @@ int perf_handling_init() {
 		}
 	}
 
-	perf_events = (struct PerfEvent*)calloc(sizeof(struct PerfEvent), perf_events_num);
+	perf_events = (struct PerfEvent*)malloc(sizeof(struct PerfEvent) * perf_events_num);
 
-	int count = 0;
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
 		for (int i = 0; i < perf_event_entry_number; i++){
 			event = &perf_event_table[i];
@@ -219,7 +219,11 @@ int perf_handling_init() {
 		}
 	}
 
-	perf_fds = (struct pollfd*)calloc(sizeof(struct pollfd), perf_events_num);
+	perf_fds = (struct pollfd*)malloc(perf_events_num * sizeof(struct pollfd));
+	for (int i = 0; i < perf_events_num; i++) {
+		perf_fds[i].fd = perf_events[i].perf_fd;
+		perf_fds[i].events = POLLIN;
+	}
 
 	return 0;
 }
@@ -245,10 +249,6 @@ int perf_handling_start() {
 
 int perf_handling_process() {
 	int err = 0, i;
-	for (i = 0; i < perf_events_num; i++) {
-		perf_fds[i].fd = perf_events[i].perf_fd;
-		perf_fds[i].events = POLLIN;
-	}
 	poll(perf_fds, perf_events_num, 250);
 	for (i = 0; i < perf_events_num; i++) {
 		err = perf_event_process(perf_events + i);
