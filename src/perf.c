@@ -68,6 +68,7 @@ int perf_event_setup(struct PerfEvent *perf_event) {
 	attr.type = PERF_TYPE_TRACEPOINT;
 	attr.sample_period = 1;
 	attr.sample_type = SAMPLE_CONFIG_FLAG;
+	attr.sample_id_all = 1;
 
 	attr.disabled = 1;
 	attr.exclude_callchain_user = 1;
@@ -172,7 +173,7 @@ int perf_handle_sample(struct PerfEvent *perf_event, const unsigned char* header
 
 int perf_handle_lost_event(const unsigned char* header) {
 	struct perf_lost_events *body = (struct perf_lost_events*)header;
-	log_warn("Lost event on CPU %d!\n", body->sample_id.cpu);
+	log_warn("Lost %d events on CPU %d!\n", body->lost, body->sample_id.cpu);
 	return 0;
 }
 
