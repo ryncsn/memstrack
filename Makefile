@@ -23,7 +23,7 @@ proc.o: src/proc.c src/proc.h
 memstrack.o: src/memstrack.c src/perf-handler.h src/tracing.h src/utils.h src/ftrace-handler.h src/memstrack.h
 
 memstrack: $(MEMORY_TRACER_OBJ)
-	$(CC) $(LDFLAGS) -o $@ $(MEMORY_TRACER_OBJ)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(MEMORY_TRACER_OBJ)
 
 .PHONY: clean
 clean:
