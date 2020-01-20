@@ -184,6 +184,8 @@ int main(int argc, char **argv) {
 		exit(EPERM);
 	}
 
+	set_high_priority();
+
 	while (1) {
 		int opt;
 		int option_index = 0;
