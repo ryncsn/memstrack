@@ -29,11 +29,11 @@ const unsigned char* __process_common(struct PerfEvent *perf_event, const unsign
 	return header;
 }
 
-static struct TraceNode* __process_stacktrace(
+static struct Tracenode* __process_stacktrace(
 		struct perf_sample_callchain *callchain,
 		struct Task *task, struct PageEvent *event)
 {
-	struct TraceNode *tp = NULL;
+	struct Tracenode *tp = NULL;
 
 	for (int i = 1; i <= (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
@@ -42,13 +42,15 @@ static struct TraceNode* __process_stacktrace(
 			continue;
 		}
 		if (i == 1) {
-			tp = to_tracenode(get_or_new_child_callsite(to_tracenode(task), NULL, addr));
+			tp = get_or_new_child_tracenode(&task->tracenode, NULL, addr);
 		} else {
-			tp = to_tracenode(get_or_new_child_callsite(tp, NULL, addr));
+			tp = get_or_new_child_tracenode(tp, NULL, addr);
 		}
+
+		try_update_record(tp, event);
 	}
 
-	update_record(tp, event, NULL);
+	update_record(tp, event);
 	return tp;
 }
 
@@ -143,7 +145,7 @@ int perf_handle_mm_page_free(struct PerfEvent *perf_event, const unsigned char* 
 	}
 
 	// TODO: not tracking task here
-	update_record(NULL, &event, NULL);
+	update_record(NULL, &event);
 
 	return 0;
 }

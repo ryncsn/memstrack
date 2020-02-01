@@ -171,29 +171,26 @@ static void loop_tracing(void) {
 #define MAX_CALLSITE_VIEW 64
 #define MISC_PAD 4
 
-struct callsite_view_node {
-	struct Callsite* callsite;
-	struct callsite_view_node *callsite_head, *callsite_tail;
+struct tracenode_view_node {
+	struct Tracenode* tracenode;
+	struct tracenode_view_node *tracenode_head, *tracenode_tail;
 	bool highlight;
 	int indent;
-	struct callsite_view* next;
+	struct tracenode_view* next;
 };
 
 struct task_view_node {
 	struct Task* task;
-	struct callsite_view_node* callsite_head, callsite_tail;
+	struct tracenode_view_node* tracenode_head, tracenode_tail;
 } *task_view_head, *task_view_tail;
 
 // TODO: Do this in another thread to avoid it blocking the tracing worker
-static struct TraceNode generate_top_stacktrace(struct TraceNode* tn) {
-	int total_count = LINES - MISC_PAD;
-
+static struct Tracenode generate_top_stacktrace(struct Tracenode* tn, int total_count) {
 	for (int i = 0; i < total_count; ++i) {
-
 	}
 }
 
-static struct TraceNode collect_top_task(int topn) {
+static struct Tracenode collect_top_task(int topn) {
 	struct Task **tasks = NULL;
 	struct HashNode *node = NULL;
 

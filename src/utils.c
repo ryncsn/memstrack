@@ -141,31 +141,32 @@ struct TreeNode* get_remove_tree_node(
 	return NULL;
 }
 
-struct TreeNode* insert_tree_node(
+void insert_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,
 		int (*comp)(struct TreeNode *src, struct TreeNode *root))
 {
-	int result;
 	struct TreeNode *root = *root_p;
-	if (root == NULL) {
-		return *root_p = src;
-	}
+	int result;
+
+	if (root == NULL)
+		*root_p = src;
+
 	while (1) {
 		result = comp(src, root);
 		if (result == 0) {
-			return root;
+			return;
 		} else if (result < 0) {
 			if (root->left) {
 				root = root->left;
 			} else {
-				return root->left = src;
+				root->left = src;
 			}
 		} else {
 			if (root->right) {
 				root = root->right;
 			} else {
-				return root->right = src;
+				root->right = src;
 			}
 		}
 	}

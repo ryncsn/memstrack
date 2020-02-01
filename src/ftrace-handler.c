@@ -27,7 +27,7 @@ static void __ignore_stacktrace() {
 
 }
 
-static struct TraceNode* __process_stacktrace() {
+static struct Tracenode* __process_stacktrace() {
 	lookahead = !!ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file);
 	if (!lookahead) {
 		// EOF
@@ -38,7 +38,7 @@ static struct TraceNode* __process_stacktrace() {
 		return NULL;
 	}
 
-	struct TraceNode *tp = NULL;
+	struct Tracenode *tp = NULL;
 	char callsite[MAX_SYMBOL], *callsite_arg = NULL;
 	int callsite_len = 0;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
@@ -51,11 +51,11 @@ static struct TraceNode* __process_stacktrace() {
 
 	if (tp == NULL) {
 		tp = to_tracenode(
-				get_or_new_child_callsite(
+				get_or_new_children(
 					to_tracenode(task),
 					callsite, 0));
 	} else {
-		tp = to_tracenode(get_or_new_child_callsite(tp, callsite, 0));
+		tp = to_tracenode(get_or_new_children(tp, callsite, 0));
 	}
 
 	return tp;
@@ -116,7 +116,7 @@ int ftrace_handle_kmem_cache_alloc() {
 }
 
 int ftrace_handling_process() {
-	struct TraceNode *tn;
+	struct Tracenode *tn;
 
 	while(lookahead || ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file)){
 		lookahead = 0;

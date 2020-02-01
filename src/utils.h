@@ -27,6 +27,22 @@ struct HashMap {
 	((type *)((void *)(ptr) - offsetof(type, member)))
 
 
+#define have_left_child(ptr, type, member)\
+	((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->left) != NULL)
+
+
+#define left_child(ptr, type, member)\
+	container_of((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->left), type, member)
+
+
+#define have_right_child(ptr, type, member)\
+	((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->right) != NULL)
+
+
+#define right_child(ptr, type, member)\
+	container_of((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->right), type, member)
+
+
 struct TreeNode* get_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,
@@ -39,7 +55,7 @@ struct TreeNode* get_remove_tree_node(
 		int (*comp)(struct TreeNode *src, struct TreeNode *root));
 
 
-struct TreeNode* insert_tree_node(
+void insert_tree_node(
 		struct TreeNode **root_p,
 		struct TreeNode *src,
 		int (*comp)(struct TreeNode *src, struct TreeNode *root));

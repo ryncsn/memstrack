@@ -74,10 +74,10 @@ static char* get_process_name_by_pid(const int pid)
 }
 
 void mem_tracing_init() {
+	// unsigned long total_pages;
 	struct zone_info *zone;
-	unsigned long total_pages;
 
-	total_pages = sysconf(_SC_PHYS_PAGES);
+	// total_pages = sysconf(_SC_PHYS_PAGES);
 	parse_zone_info(&zone);
 	max_pfn = 0;
 
@@ -91,9 +91,9 @@ void mem_tracing_init() {
 	page_map = calloc(max_pfn, sizeof(struct PageRecord));
 }
 
-static int compCallsite(struct TreeNode *src, struct TreeNode *root) {
-	struct Callsite *src_data = container_of(src, struct Callsite, node);
-	struct Callsite *root_data = container_of(root, struct Callsite, node);
+static int compTracenode(struct TreeNode *src, struct TreeNode *root) {
+	struct Tracenode *src_data = container_of(src, struct Tracenode, node);
+	struct Tracenode *root_data = container_of(root, struct Tracenode, node);
 	// TODO: Fix if symbol only available on one node
 	return (long)src_data->addr - (long)root_data->addr;
 }
@@ -109,8 +109,8 @@ static int is_trivial_record(struct Record *record) {
 	return 0;
 }
 
-static int is_trivial_tracenode(struct TraceNode *node) {
-	if (node->child_callsites)
+static int is_trivial_tracenode(struct Tracenode *node) {
+	if (node->children)
 		return 0;
 
 	if (is_trivial_record(node->record)) {
@@ -121,10 +121,10 @@ static int is_trivial_tracenode(struct TraceNode *node) {
 }
 
 /*
- * Try to free a callsite, if it have no child and have no memory info, then free it
+ * Try to free a tracenode, if it have no child and have no memory info, then free it
  */
-static void free_tracenode(struct TraceNode* tracenode) {
-	struct TraceNode *parent;
+static void free_tracenode(struct Tracenode* tracenode) {
+	struct Tracenode *parent;
 	while (tracenode) {
 		parent = tracenode->parent;
 
@@ -133,17 +133,17 @@ static void free_tracenode(struct TraceNode* tracenode) {
 			return;
 		}
 
-		if (tracenode->child_callsites) {
+		if (tracenode->children) {
 			if (tracenode->record)
 				free(tracenode->record);
 		} else {
-			struct TreeNode *tree_root = &parent->child_callsites->node;
-			get_remove_tree_node(&tree_root, &to_callsite(tracenode)->node, compCallsite);
+			struct TreeNode *tree_root = &parent->children->node;
+			get_remove_tree_node(&tree_root, &tracenode->node, compTracenode);
 
 			if (tree_root) {
-				parent->child_callsites = container_of(tree_root, struct Callsite, node);
+				parent->children = container_of(tree_root, struct Tracenode, node);
 			} else {
-				parent->child_callsites = NULL;
+				parent->children = NULL;
 			}
 			free(tracenode);
 		}
@@ -156,7 +156,7 @@ static void free_tracenode(struct TraceNode* tracenode) {
  * Record that a memory region is being allocated by a tracenode
  * Should only be called against top of the stack
  */
-static void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigned long nr_pages) {
+static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigned long nr_pages) {
 	struct Record *record;
 	page_alloc_counter += nr_pages;
 
@@ -182,7 +182,7 @@ static void record_page_alloc(struct TraceNode *root, unsigned long pfn, unsigne
  * Should only be called against top of the stack
  */
 static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
-	struct TraceNode *tracenode = NULL;
+	struct Tracenode *tracenode = NULL;
 
 	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
 	if (pfn > max_pfn) {
@@ -216,7 +216,7 @@ static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	}
 }
 
-void update_record(struct TraceNode *tracenode, struct PageEvent *pevent, struct AllocEvent *aevent) {
+void update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
 	if (tracenode && !tracenode->record) {
 		tracenode->record = calloc(1, sizeof(struct Record));
 	}
@@ -232,61 +232,55 @@ void update_record(struct TraceNode *tracenode, struct PageEvent *pevent, struct
 	}
 }
 
-struct Callsite* get_child_callsite(struct TraceNode *tnode, char *symbol, unsigned long addr) {
-	if (tnode->child_callsites == NULL) {
+struct Tracenode* get_child_tracenode(struct Tracenode *tnode, char *symbol, unsigned long addr) {
+	if (tnode->children == NULL) {
 		return NULL;
 	}
 
-	struct TreeNode *tree_node = &tnode->child_callsites->node, *ret_node = NULL;
-	struct Callsite cs_key;
+	struct TreeNode *tree_node = &tnode->children->node, *ret_node = NULL;
+	struct Tracenode cs_key;
 
 	cs_key.symbol = symbol;
 	cs_key.addr = addr;
 
-	ret_node = get_tree_node(&tree_node, &cs_key.node, compCallsite);
-	tnode->child_callsites = container_of(tree_node, struct Callsite, node);
+	ret_node = get_tree_node(&tree_node, &cs_key.node, compTracenode);
+	tnode->children = container_of(tree_node, struct Tracenode, node);
 	if (ret_node) {
-		return container_of(ret_node, struct Callsite, node);
+		return container_of(ret_node, struct Tracenode, node);
 	} else {
 		return NULL;
 	}
 }
 
-struct Callsite* insert_child_callsite(struct TraceNode *tnode, struct Callsite *src){
-	if (tnode->child_callsites == NULL) {
-		tnode->child_callsites = src;
+struct Tracenode* insert_child_tracenode(struct Tracenode *tnode, struct Tracenode *src){
+	if (tnode->children == NULL) {
+		tnode->children = src;
 		return src;
 	}
 
-	struct TreeNode *tree_node = &tnode->child_callsites->node, *ret_node = NULL;
-	ret_node = insert_tree_node(&tree_node, &src->node, compCallsite);
-	tnode->child_callsites = container_of(tree_node, struct Callsite, node);
+	struct TreeNode *tree_node = &tnode->children->node;
+	insert_tree_node(&tree_node, &src->node, compTracenode);
+	tnode->children = container_of(tree_node, struct Tracenode, node);
 	return src;
 }
 
-struct Callsite* get_or_new_child_callsite(struct TraceNode *root, char *symbol, unsigned long addr){
-	struct Callsite *callsite;
-	callsite = get_child_callsite(root, symbol, addr);
+struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, char *symbol, unsigned long addr){
+	struct Tracenode *tracenode;
+	tracenode = get_child_tracenode(root, symbol, addr);
 
-	if (callsite == NULL) {
-		callsite = (struct Callsite*)calloc(1, sizeof(struct Callsite));
+	if (tracenode == NULL) {
+		tracenode = (struct Tracenode*)calloc(1, sizeof(struct Tracenode));
 		if (symbol) {
 			int sym_len = strlen(symbol) + 1;
-			callsite->symbol = (char*)malloc(sym_len);
-			strcpy(callsite->symbol, symbol);
+			tracenode->symbol = (char*)malloc(sym_len);
+			strcpy(tracenode->symbol, symbol);
 		}
-		callsite->addr = addr;
-		to_tracenode(callsite)->parent = root;
-		insert_child_callsite(root, callsite);
+		tracenode->addr = addr;
+		tracenode->parent = root;
+		insert_child_tracenode(root, tracenode);
 	}
 
-	return callsite;
-}
-
-static int compAllocRerord(struct TreeNode *src, struct TreeNode *root) {
-	struct AllocRecord *src_data = container_of(src, struct AllocRecord, node);
-	struct AllocRecord *root_data = container_of(root, struct AllocRecord, node);
-	return (long)src_data->addr - (long)root_data->addr;
+	return tracenode;
 }
 
 static struct Task* try_get_task(struct HashMap *map, char* task_name, int pid) {
@@ -428,50 +422,84 @@ char* kaddr_to_sym(unsigned long long addr) {
 	return str_buffer;
 };
 
+
+static void iter_tracenode_children(
+		struct Tracenode* child_root,
+		void (*op)(struct Tracenode *node, void *blob),
+		void *blob)
+{
+	op(child_root, blob);
+
+	if (have_left_child(child_root, struct Tracenode, node)) {
+		iter_tracenode_children(
+				left_child(child_root, struct Tracenode, node),
+				op, blob);
+	}
+	if (have_right_child(child_root, struct Tracenode, node)) {
+		iter_tracenode_children(
+				right_child(child_root, struct Tracenode, node),
+				op, blob);
+	}
+}
+
+
+static void depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
+	if(tracenode->record)
+		free(tracenode->record);
+
+	iter_tracenode_children(tracenode->children, depopulate_tracenode, NULL);
+}
+
 /*
  * Allocation info is only recorded at the tracenode represents the top of stack
  * for better performacne, need to collect the info before generate report
  */
-static void collect_child_info(struct TraceNode* tracenode);
-
-static void populate_child_callsites(struct TreeNode* treenode, void *blob) {
+static void do_populate_tracenode(struct Tracenode* tracenode, void *blob) {
 	struct Record *parent_record = (struct Record*)blob;
-	struct Callsite *callsite = container_of(treenode, struct Callsite, node);
 
-	collect_child_info(to_tracenode(callsite));
-
-	parent_record->pages_alloc += to_tracenode(callsite)->record->pages_alloc;
-	parent_record->pages_alloc_peak += to_tracenode(callsite)->record->pages_alloc_peak;
-}
-
-static void collect_child_info(struct TraceNode* tracenode) {
 	if (tracenode->record == NULL) {
 		tracenode->record = calloc(1, sizeof(struct Record));
 	} else {
 		return;
 	}
-	if (tracenode->child_callsites) {
-		iter_tree_node(&tracenode->child_callsites->node, populate_child_callsites, tracenode->record);
-	}
+
+	if (tracenode->children)
+		iter_tracenode_children(tracenode->children, do_populate_tracenode, tracenode->record);
+
+	parent_record->pages_alloc += tracenode->record->pages_alloc;
+	parent_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
 }
 
-static void callsite_neibor_iterator(struct TreeNode* tn, void *blob)
-{
-	void (*handler)(struct TraceNode *node, void *blob) = blob;
+void populate_tracenode(struct Tracenode* tracenode) {
+	if (tracenode->record == NULL)
+		tracenode->record = calloc(1, sizeof(struct Record));
 
-	struct TraceNode *tn = to_tracenode(container_of(tn, struct Callsite, node));
-
+	if (tracenode->children)
+		iter_tracenode_children(tracenode->children, do_populate_tracenode, tracenode->record);
 }
 
-void iter_callsite_leaf(struct TraceNode* tracenode,
-		void (*handler)(struct TraceNode *node, void *blob),
-		void *blob) {
-	if (tracenode->child_callsites == NULL) {
-		handler(tracenode, blob);
+static void collect_child_info(struct Tracenode* tracenode, void *blob) {
+	struct Record *root_record = (struct Record*)blob;
+
+	if (tracenode->record) {
+		root_record->pages_alloc += tracenode->record->pages_alloc;
+		root_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
+	} else if (tracenode->children) {
+		iter_tracenode_children(tracenode->children, collect_child_info, tracenode->record);
 	} else {
-		iter_tree_node(&tracenode->child_callsites->node,
-				populate_child_callsites, tracenode->record);
+		log_debug("BUG: Empty Tracenode\n");
 	}
+}
+
+void populate_tracenode_shallow(struct Tracenode* tracenode) {
+	if (tracenode->record == NULL) {
+		tracenode->record = calloc(1, sizeof(struct Record));
+	} else {
+		return;
+	}
+
+	if (tracenode->children)
+		iter_tracenode_children(tracenode->children, collect_child_info, tracenode->record);
 }
 
 static void count_tree_node(struct TreeNode* _, void *blob) {
@@ -481,20 +509,20 @@ static void count_tree_node(struct TreeNode* _, void *blob) {
 
 static void collect_tree_node(struct TreeNode* tnode, void *blob) {
 	struct TreeNode ***tail = (struct TreeNode***) blob;
-	struct TraceNode *tn = to_tracenode(container_of(tnode, struct Callsite, node));
-	collect_child_info(tn);
+	struct Tracenode *tn = container_of(tnode, struct Tracenode, node);
+	populate_tracenode(tn);
 	**tail = tnode;
 	(*tail)++;
 }
 
-static int comp_callsite_mem(const void *x, const void *y) {
+static int comp_tracenode_mem(const void *x, const void *y) {
 	long long x_mem, y_mem;
 
-	struct Callsite *x_n = container_of(*(struct TreeNode**)x, struct Callsite, node);
-	struct Callsite *y_n = container_of(*(struct TreeNode**)y, struct Callsite, node);
+	struct Tracenode *x_n = container_of(*(struct TreeNode**)x, struct Tracenode, node);
+	struct Tracenode *y_n = container_of(*(struct TreeNode**)y, struct Tracenode, node);
 
-	x_mem = to_tracenode(x_n)->record->pages_alloc * page_size;
-	y_mem = to_tracenode(y_n)->record->pages_alloc * page_size;
+	x_mem = x_n->record->pages_alloc * page_size;
+	y_mem = y_n->record->pages_alloc * page_size;
 
 	if (x_mem == y_mem) {
 		return 0;
@@ -503,18 +531,18 @@ static int comp_callsite_mem(const void *x, const void *y) {
 	}
 }
 
-static struct TreeNode **collect_sort_callsites(struct TreeNode *root) {
+static struct TreeNode **collect_sort_tracenodes(struct TreeNode *root) {
 	int count = 0;
-	struct TreeNode **callsites, **tail;
+	struct TreeNode **tracenodes, **tail;
 
 	iter_tree_node(root, count_tree_node, &count);
-	tail = callsites = malloc((count + 1) * sizeof(struct TreeNode*));
-	callsites[count] = NULL;
+	tail = tracenodes = malloc((count + 1) * sizeof(struct TreeNode*));
+	tracenodes[count] = NULL;
 
 	iter_tree_node(root, collect_tree_node, &tail);
-	qsort((void*)callsites, count, sizeof(struct TreeNode*), comp_callsite_mem);
+	qsort((void*)tracenodes, count, sizeof(struct TreeNode*), comp_tracenode_mem);
 
-	return callsites;
+	return tracenodes;
 }
 
 static int comp_task_mem(const void *x, const void *y) {
@@ -523,8 +551,8 @@ static int comp_task_mem(const void *x, const void *y) {
 	struct Task *x_t = *(struct Task**)x;
 	struct Task *y_t = *(struct Task**)y;
 
-	x_mem = to_tracenode(x_t)->record->pages_alloc * page_size;
-	y_mem = to_tracenode(y_t)->record->pages_alloc * page_size;
+	x_mem = x_t->tracenode.record->pages_alloc * page_size;
+	y_mem = y_t->tracenode.record->pages_alloc * page_size;
 
 	if (x_mem == y_mem) {
 		return 0;
@@ -544,7 +572,7 @@ static struct Task **sort_tasks(struct HashMap *map) {
 			node = map->buckets[i];
 			while(node) {
 				tasks[j] = container_of(node, struct Task, node);
-				collect_child_info(to_tracenode(tasks[j]));
+				populate_tracenode(&tasks[j]->tracenode);
 				node = node->next;
 				j++;
 			}
@@ -555,34 +583,34 @@ static struct Task **sort_tasks(struct HashMap *map) {
 	return tasks;
 }
 
-static void print_callsite_json(struct TreeNode* tnode, void *blob) {
+static void print_tracenode_json(struct TreeNode* tnode, void *blob) {
 	struct json_marker *current = (struct json_marker*)blob;
 	struct json_marker next = {current->indent + 2, 0};
 
 	char padding[512] = {0};
-	struct Callsite *callsite = container_of(tnode, struct Callsite, node);
+	struct Tracenode *tracenode = container_of(tnode, struct Tracenode, node);
 	for (int i = 0; i < current->indent + 1; ++i) {
 		padding[i] = ' ';
 	}
 	if (current->count) {
 		log_info(",\n");
 	}
-	if (callsite->symbol) {
-		log_info("%s\"%s\": ", padding, callsite->symbol);
-	} else if (callsite->addr) {
-		log_info("%s\"%s\": ", padding, kaddr_to_sym(callsite->addr));
+	if (tracenode->symbol) {
+		log_info("%s\"%s\": ", padding, tracenode->symbol);
+	} else if (tracenode->addr) {
+		log_info("%s\"%s\": ", padding, kaddr_to_sym(tracenode->addr));
 	} else {
 		log_info("%s\"unknown\": ", padding);
 	}
 	log_info("{\n");
-	log_info("%s \"pages_alloc\": %d", padding, to_tracenode(callsite)->record->pages_alloc);
-	log_info(",%s \"pages_alloc_peak\": %d", padding, to_tracenode(callsite)->record->pages_alloc_peak);
-	if (to_tracenode(callsite)->child_callsites) {
-		log_info(",\n%s \"callsites\": {\n", padding);
+	log_info("%s \"pages_alloc\": %d", padding, tracenode->record->pages_alloc);
+	log_info(",%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
+	if (tracenode->children) {
+		log_info(",\n%s \"tracenodes\": {\n", padding);
 		struct TreeNode **nodes;
-		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
+		nodes = collect_sort_tracenodes(&tracenode->children->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite_json(nodes[i], &next);
+			print_tracenode_json(nodes[i], &next);
 		}
 		free(nodes);
 		log_info("\n%s }\n", padding);
@@ -598,14 +626,14 @@ static void print_task_json(struct Task* task, int last_task) {
 	log_info(" {\n");
 	log_info("  \"task_name\": \"%s\",\n", task->task_name);
 	log_info("  \"pid\" :\"%d\",\n", task->pid);
-	log_info("  \"pages_alloc\": %d,\n", to_tracenode(task)->record->pages_alloc);
-	log_info("  \"pages_alloc_peak\": %d,\n", to_tracenode(task)->record->pages_alloc_peak);
-	log_info("  \"callsites\": {\n");
-	if(to_tracenode(task)->child_callsites) {
+	log_info("  \"pages_alloc\": %d,\n", task->tracenode.record->pages_alloc);
+	log_info("  \"pages_alloc_peak\": %d,\n", task->tracenode.record->pages_alloc_peak);
+	log_info("  \"tracenodes\": {\n");
+	if(task->tracenode.children) {
 		struct TreeNode **nodes;
-		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
+		nodes = collect_sort_tracenodes(&task->tracenode.children->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite_json(nodes[i], &marker);
+			print_tracenode_json(nodes[i], &marker);
 		}
 		free(nodes);
 	}
@@ -618,7 +646,7 @@ static void print_task_json(struct Task* task, int last_task) {
 	}
 }
 
-static void print_callsite(struct TreeNode* tnode, int current_indent, int substack_limit, int throttle) {
+static void print_tracenode(struct TreeNode* tnode, int current_indent, int substack_limit, int throttle) {
 	int next_indent = current_indent + 2;
 	char* padding = calloc(current_indent + 1, sizeof(char));
 	long page_limit;
@@ -627,13 +655,12 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 		padding[i] = ' ';
 	}
 
-	struct Callsite *callsite = container_of(tnode, struct Callsite, node);
-	struct TraceNode *tracenode = to_tracenode(callsite);
+	struct Tracenode *tracenode = container_of(tnode, struct Tracenode, node);
 
-	if (callsite->symbol) {
-		log_info("%s%s", padding, callsite->symbol);
-	} else if (callsite->addr) {
-		log_info("%s%s", padding, kaddr_to_sym(callsite->addr));
+	if (tracenode->symbol) {
+		log_info("%s%s", padding, tracenode->symbol);
+	} else if (tracenode->addr) {
+		log_info("%s%s", padding, kaddr_to_sym(tracenode->addr));
 	} else {
 		log_info("%s(unknown)", padding);
 	}
@@ -651,20 +678,20 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 		page_limit = page_limit * throttle / 100;
 	}
 
-	if (tracenode->child_callsites) {
+	if (tracenode->children) {
 		struct TreeNode **nodes;
-		struct Callsite * cs;
-		nodes = collect_sort_callsites(&to_tracenode(callsite)->child_callsites->node);
+		struct Tracenode *tn;
+		nodes = collect_sort_tracenodes(&tracenode->children->node);
 		for (int i = 0; nodes[i] != NULL &&
 				(substack_limit < 0 || i < substack_limit) &&
 				page_limit; i++) {
-			print_callsite(nodes[i], next_indent, substack_limit, throttle);
-			cs = container_of(nodes[i], struct Callsite, node);
+			print_tracenode(nodes[i], next_indent, substack_limit, throttle);
+			tn = container_of(nodes[i], struct Tracenode, node);
 
 			if (m_sort_peak)
-				page_limit -= to_tracenode(cs)->record->pages_alloc_peak;
+				page_limit -= tn->record->pages_alloc_peak;
 			else if (m_sort_alloc)
-				page_limit -= to_tracenode(cs)->record->pages_alloc;
+				page_limit -= tn->record->pages_alloc;
 		}
 		free(nodes);
 	}
@@ -672,17 +699,17 @@ static void print_callsite(struct TreeNode* tnode, int current_indent, int subst
 
 static void print_task(struct Task* task) {
 	int indent;
-	struct TraceNode *tn = to_tracenode(task);
+	struct Tracenode *tn = &task->tracenode;
 	log_info("%s Pages: %d (peak: %d)\n",
 			task->task_name,
 			tn->record->pages_alloc,
 			tn->record->pages_alloc_peak);
-	if (to_tracenode(task)->child_callsites) {
+	if (task->tracenode.children) {
 		struct TreeNode **nodes;
 		indent = 2;
-		nodes = collect_sort_callsites(&to_tracenode(task)->child_callsites->node);
+		nodes = collect_sort_tracenodes(&task->tracenode.children->node);
 		for (int i = 0; nodes[i] != NULL; i++) {
-			print_callsite(nodes[i], indent, -1, m_throttle);
+			print_tracenode(nodes[i], indent, -1, m_throttle);
 		}
 		free(nodes);
 	}
@@ -700,9 +727,9 @@ static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limi
 		}
 
 		if (m_sort_alloc)
-			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc;
+			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 		else if (m_sort_peak)
-			nr_pages_limit -= to_tracenode(tasks[i])->record->pages_alloc_peak;
+			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
 	}
 	if (m_json)
 		log_info("]\n");
@@ -714,17 +741,15 @@ static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limi
 static struct module_usage {
 	char *name;
 	long pages;
-	struct TraceNode *top_node[3];
+	struct Tracenode *top_node[3];
 	struct module_usage *next;
 } *module_usages;
 
-static int module_counter;
-
 static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 {
-	struct Callsite *cs = container_of(tnode, struct Callsite, node);
+	struct Tracenode *tn = container_of(tnode, struct Tracenode, node);
 
-	char *module_name = strstr(kaddr_to_sym(cs->addr), "[");
+	char *module_name = strstr(kaddr_to_sym(tn->addr), "[");
 	struct module_usage *parent_module = (struct module_usage*)blob;
 
 	if (module_name) {
@@ -732,7 +757,7 @@ static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 
 		if (parent_module) {
 			if (strcmp(module_name, parent_module->name) != 0) {
-				if (to_tracenode(cs)->record->pages_alloc > (parent_module->pages * 85 / 100)) {
+				if (tn->record->pages_alloc > (parent_module->pages * 85 / 100)) {
 					tail = &parent_module;
 					free((*tail)->name);
 					(*tail)->name = strdup(module_name);
@@ -754,28 +779,28 @@ static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 			}
 
 			if (m_sort_alloc)
-				(*tail)->pages += to_tracenode(cs)->record->pages_alloc;
+				(*tail)->pages += tn->record->pages_alloc;
 			else if (m_sort_peak)
-				(*tail)->pages += to_tracenode(cs)->record->pages_alloc_peak;
+				(*tail)->pages += tn->record->pages_alloc_peak;
 		}
 
 		for (int i = 0; i < 3; ++i) {
 			if (!(*tail)->top_node[i]) {
-				(*tail)->top_node[i] = to_tracenode(cs);
-			} else if ((*tail)->top_node[i]->record->pages_alloc < to_tracenode(cs)->record->pages_alloc) {
-				(*tail)->top_node[i] = to_tracenode(cs);
+				(*tail)->top_node[i] = tn;
+			} else if ((*tail)->top_node[i]->record->pages_alloc < tn->record->pages_alloc) {
+				(*tail)->top_node[i] = tn;
 				for (int j = i + 1; j < 3; ++j, ++i) {
 					(*tail)->top_node[j] = (*tail)->top_node[i];
 				}
 			}
 		}
 
-		if (to_tracenode(cs)->child_callsites) {
-			iter_tree_node(&to_tracenode(cs)->child_callsites->node, check_treenode_for_module, (*tail));
+		if (tn->children) {
+			iter_tree_node(&tn->children->node, check_treenode_for_module, (*tail));
 		}
 	} else {
-		if (to_tracenode(cs)->child_callsites) {
-			iter_tree_node(&to_tracenode(cs)->child_callsites->node, check_treenode_for_module, blob);
+		if (tn->children) {
+			iter_tree_node(&tn->children->node, check_treenode_for_module, blob);
 		}
 	}
 }
@@ -783,12 +808,12 @@ static void check_treenode_for_module(struct TreeNode* tnode, void *blob)
 static void print_summary(struct Task *tasks[], int nr_tasks)
 {
 	int indent = 2;
-	struct TreeNode *callsite_root;
+	struct TreeNode *tracenode_root;
 
 	for (int i = 0; i < nr_tasks; i++) {
-		if (to_tracenode(tasks[i])->child_callsites) {
-			callsite_root = &to_tracenode(tasks[i])->child_callsites->node;
-			iter_tree_node(callsite_root, check_treenode_for_module, NULL);
+		if (tasks[i]->tracenode.children) {
+			tracenode_root = &tasks[i]->tracenode.children->node;
+			iter_tree_node(tracenode_root, check_treenode_for_module, NULL);
 		}
 	}
 
@@ -796,7 +821,7 @@ static void print_summary(struct Task *tasks[], int nr_tasks)
 		log_info("Module %s using %d pages", module_usages->name, module_usages->pages);
 		for (int i = 0; i < 3; ++i) {
 			if (module_usages->top_node[i])
-				print_callsite(&to_callsite(module_usages->top_node[i])->node, indent, 1, m_throttle);
+				print_tracenode(&module_usages->top_node[i]->node, indent, 1, m_throttle);
 		}
 		module_usages = module_usages->next;
 	}
