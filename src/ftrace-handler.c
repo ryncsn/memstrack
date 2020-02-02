@@ -50,12 +50,11 @@ static struct Tracenode* __process_stacktrace() {
 	tp = __process_stacktrace();
 
 	if (tp == NULL) {
-		tp = to_tracenode(
-				get_or_new_children(
+		tp = get_or_new_child_tracenode(
 					to_tracenode(task),
-					callsite, 0));
+					callsite, 0);
 	} else {
-		tp = to_tracenode(get_or_new_children(tp, callsite, 0));
+		tp = get_or_new_child_tracenode(tp, callsite, 0);
 	}
 
 	return tp;
@@ -96,24 +95,24 @@ int ftrace_handle_mm_page_alloc() {
 		pevent.pages_alloc *= 2;
 	}
 
-	update_record(to_tracenode(task), &pevent, NULL);
+	update_record(to_tracenode(task), &pevent);
 	return 0;
 }
 
-int ftrace_handle_kmem_cache_alloc() {
-	unsigned long long ptr;
-	char *ptr_arg, *bytes_req_arg, *bytes_alloc_arg;
-	ptr_arg = strtok(NULL, " ") + sizeof("ptr=") - 1;
-	bytes_req_arg = strtok(NULL, " ") + sizeof("bytes_req=") - 1;
-	bytes_alloc_arg = strtok(NULL, " ") + sizeof("bytes_alloc=") - 1;
-
-	sscanf(bytes_req_arg, "%u", &aevent.bytes_req);
-	sscanf(bytes_alloc_arg, "%u", &aevent.bytes_alloc);
-	sscanf(ptr_arg, "%llx", &aevent.kvaddr);
-
-	update_record(to_tracenode(task), NULL, &aevent);
-	return 0;
-}
+// int ftrace_handle_kmem_cache_alloc() {
+// 	unsigned long long ptr;
+// 	char *ptr_arg, *bytes_req_arg, *bytes_alloc_arg;
+// 	ptr_arg = strtok(NULL, " ") + sizeof("ptr=") - 1;
+// 	bytes_req_arg = strtok(NULL, " ") + sizeof("bytes_req=") - 1;
+// 	bytes_alloc_arg = strtok(NULL, " ") + sizeof("bytes_alloc=") - 1;
+//
+// 	sscanf(bytes_req_arg, "%u", &aevent.bytes_req);
+// 	sscanf(bytes_alloc_arg, "%u", &aevent.bytes_alloc);
+// 	sscanf(ptr_arg, "%llx", &aevent.kvaddr);
+//
+// 	update_record(to_tracenode(task), NULL, &aevent);
+// 	return 0;
+// }
 
 int ftrace_handling_process() {
 	struct Tracenode *tn;
@@ -146,7 +145,7 @@ int ftrace_handling_process() {
 				__ignore_stacktrace();
 			} else {
 				tn = __process_stacktrace();
-				update_record(tn, &pevent, NULL);
+				update_record(tn, &pevent);
 				task = NULL;
 			}
 		} else {
@@ -188,9 +187,10 @@ int ftrace_handling_process() {
 			// callsite = strtok(NULL, " ");
 			task = get_or_new_task(&TaskMap, task_info, pid);
 
-			if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
-				ftrace_handle_kmem_cache_alloc();
-			} else if (strncmp(event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
+			// if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
+			// 	ftrace_handle_kmem_cache_alloc();
+			// }
+			if (strncmp(event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
 				ftrace_handle_mm_page_alloc();
 			} else {
 				log_warn("Unexpected event %s\n", event_info);

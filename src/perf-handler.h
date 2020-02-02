@@ -11,3 +11,4 @@ int perf_handling_init();
 int perf_handling_clean();
 int perf_handling_start();
 int perf_handling_process();
+int perf_handling_process_nb();

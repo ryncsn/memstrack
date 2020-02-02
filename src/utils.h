@@ -23,24 +23,24 @@ struct HashMap {
 };
 
 
+#define for_each_hnode(hashmap_p, hnode)\
+	for (int _bucket = 0; _bucket < HASH_BUCKET; _bucket++)\
+	for (hnode = (hashmap_p)->buckets[_bucket]; hnode != NULL; hnode = hnode->next)
+
 #define container_of(ptr, type, member)\
 	((type *)((void *)(ptr) - offsetof(type, member)))
 
-
-#define have_left_child(ptr, type, member)\
-	((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->left) != NULL)
-
+#define have_left_child(ptr, member)\
+	!!(ptr)->member.left
 
 #define left_child(ptr, type, member)\
-	container_of((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->left), type, member)
+	container_of(((ptr)->member.left), type, member)
 
-
-#define have_right_child(ptr, type, member)\
-	((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->right) != NULL)
-
+#define have_right_child(ptr, member)\
+	!!(ptr)->member.right
 
 #define right_child(ptr, type, member)\
-	container_of((((struct TreeNode*)((void *)(ptr) + offsetof(type, member)))->right), type, member)
+	container_of(((ptr)->member.right), type, member)
 
 
 struct TreeNode* get_tree_node(
