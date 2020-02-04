@@ -1,6 +1,5 @@
 ### C ###
-# Prerequisites
-memory-tracer
+memstrack
 
 *.o
 *.swp

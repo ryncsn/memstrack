@@ -1,7 +1,7 @@
-# memory-tracer
+# memstrack
 A memory allocation trace, like a hot spot analyzer for memory allocation
 
-Usage: memory-tracer [OPTION]...<br>
+Usage: memstrack [OPTION]...<br>
 &nbsp;&nbsp;--debug		Print debug messages.<br>
 &nbsp;&nbsp;--ftrace		Use ftrace for tracing, poor performance but should always work.<br>
 &nbsp;&nbsp;--perf		Use binary perf for tracing, may require CONFIG\_FRAME\_POINTER enabled on older kernel (before 5.1).<br>
