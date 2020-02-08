@@ -1,7 +1,10 @@
 ### C ###
 memstrack
 
+*.d
 *.o
 *.swp
+*.swo
 *.out
 *.so
+tags

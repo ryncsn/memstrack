@@ -1,5 +1,5 @@
 #include <poll.h>
-#include "tracing.h"
+#include "../tracing.h"
 
 extern int perf_events_num;
 extern struct PerfEvent *perf_events;

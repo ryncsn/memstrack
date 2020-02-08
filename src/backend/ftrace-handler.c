@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "memstrack.h"
-#include "tracing.h"
+#include "../memstrack.h"
+#include "../tracing.h"
 #include "ftrace.h"
 
 #define MAX_LINE 4096

@@ -15,8 +15,8 @@
 // For TUI support
 #include <ncurses.h>
 
-#include "perf-handler.h"
-#include "ftrace-handler.h"
+#include "backend/perf-handler.h"
+#include "backend/ftrace-handler.h"
 #include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
@@ -259,6 +259,9 @@ static int gen_timerfd(unsigned int period)
 	}
 
 	return fd;
+}
+
+static void calc_size(WINDOW *trace_win) {
 }
 
 static void update_ui(WINDOW *trace_win) {

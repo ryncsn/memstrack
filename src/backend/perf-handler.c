@@ -3,8 +3,8 @@
 #include <errno.h>
 #include <poll.h>
 
-#include "memstrack.h"
-#include "tracing.h"
+#include "../memstrack.h"
+#include "../tracing.h"
 #include "perf.h"
 
 int perf_events_num;

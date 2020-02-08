@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/perf_event.h>
+#include "../memstrack.h"
 
 #define CPU_BUFSIZE 64
 

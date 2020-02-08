@@ -1,4 +1,5 @@
 #include <stdio.h>
+// #define MAX_LINE 4096
 #define MAX_LINE 4096
 
 int ftrace_handling_init();
