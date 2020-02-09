@@ -74,6 +74,7 @@ char* kaddr_to_sym(unsigned long long addr);
 
 void populate_tracenode_shallow(struct Tracenode* tracenode);
 void populate_tracenode(struct Tracenode* tracenode);
+void depopulate_tracenode(struct Tracenode* tracenode);
 
 struct Tracenode* get_child_tracenode(struct Tracenode *root, char *symbol, unsigned long addr);
 struct Tracenode* insert_child_tracenode(struct Tracenode *root, struct Tracenode *src);
@@ -85,6 +86,10 @@ struct Task **collect_tasks_sorted(struct HashMap *map, int *count, int shallow)
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 
 void final_report(struct HashMap *map, int task_limit);
+int for_each_tracenode_ret(struct Tracenode* root, int (*op)(struct Tracenode *node, void *blob), void *blob);
+void for_each_tracenode(struct Tracenode* root, void (*op)(struct Tracenode *node, void *blob), void *blob);
+
+
 
 #define _MEMORY_TRACER_TRACING_LIB 1
 

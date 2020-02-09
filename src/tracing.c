@@ -140,8 +140,10 @@ static void free_tracenode(struct Tracenode* tracenode) {
 		}
 
 		if (tracenode->children) {
-			if (tracenode->record)
+			if (tracenode->record) {
 				free(tracenode->record);
+				tracenode->record = NULL;
+			}
 		} else {
 			struct TreeNode *tree_root = &parent->children->node;
 			get_remove_tree_node(&tree_root, &tracenode->node, compTracenode);
@@ -364,8 +366,10 @@ void load_kallsyms() {
 
 	sym_buf_tail_p = &symbol_buf_head;
 	symbol_table_len = 0;
-	if (symbol_table)
+	if (symbol_table) {
 		free(symbol_table);
+		symbol_table = NULL;
+	}
 
 	FILE *proc_kallsyms = fopen("/proc/kallsyms", "r");
 	char read_buf[4096];
@@ -436,8 +440,31 @@ char* kaddr_to_sym(unsigned long long addr) {
 	return str_buffer;
 };
 
+int for_each_tracenode_ret(
+		struct Tracenode* root,
+		int (*op)(struct Tracenode *node, void *blob),
+		void *blob)
+{
+	int ret;
+	ret = op(root, blob);
 
-static void iter_tracenodes(
+	if (have_left_child(root, node)) {
+		ret = for_each_tracenode_ret(left_child(root, struct Tracenode, node),
+				op, blob);
+		if (ret)
+			return ret;
+	}
+	if (have_right_child(root, node)) {
+		ret = for_each_tracenode_ret(right_child(root, struct Tracenode, node),
+				op, blob);
+		if (ret)
+			return ret;
+	}
+
+	return ret;
+}
+
+void for_each_tracenode(
 		struct Tracenode* root,
 		void (*op)(struct Tracenode *node, void *blob),
 		void *blob)
@@ -445,24 +472,31 @@ static void iter_tracenodes(
 	op(root, blob);
 
 	if (have_left_child(root, node)) {
-		iter_tracenodes(left_child(root, struct Tracenode, node),
+		for_each_tracenode(left_child(root, struct Tracenode, node),
 				op, blob);
 	}
 	if (have_right_child(root, node)) {
-		iter_tracenodes(right_child(root, struct Tracenode, node),
+		for_each_tracenode(right_child(root, struct Tracenode, node),
 				op, blob);
 	}
 }
 
-static void depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
-	if(tracenode->record) {
-		if(tracenode->record->blob)
-			free(tracenode->record);
-		free(tracenode->record);
-	}
+void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
+	if (tracenode->record && tracenode->children) {
+		if (tracenode->record->blob) {
+			free(tracenode->record->blob);
+			tracenode->record->blob = NULL;
+		}
 
-	if (tracenode->children)
-		iter_tracenodes(tracenode->children, depopulate_tracenode, NULL);
+		free(tracenode->record);
+		tracenode->record = NULL;
+
+		for_each_tracenode(tracenode->children, do_depopulate_tracenode, NULL);
+	}
+}
+
+void depopulate_tracenode(struct Tracenode* tracenode) {
+	do_depopulate_tracenode(tracenode, NULL);
 }
 
 /*
@@ -476,7 +510,7 @@ static void do_populate_tracenode(struct Tracenode* tracenode, void *blob) {
 		tracenode->record = calloc(1, sizeof(struct Record));
 
 		if (tracenode->children)
-			iter_tracenodes(tracenode->children, do_populate_tracenode, tracenode->record);
+			for_each_tracenode(tracenode->children, do_populate_tracenode, tracenode->record);
 	}
 
 	parent_record->pages_alloc += tracenode->record->pages_alloc;
@@ -491,7 +525,7 @@ void populate_tracenode(struct Tracenode* tracenode) {
 	}
 
 	if (tracenode->children)
-		iter_tracenodes(tracenode->children, do_populate_tracenode, tracenode->record);
+		for_each_tracenode(tracenode->children, do_populate_tracenode, tracenode->record);
 }
 
 static void collect_child_info(struct Tracenode* tracenode, void *blob) {
@@ -501,7 +535,7 @@ static void collect_child_info(struct Tracenode* tracenode, void *blob) {
 		root_record->pages_alloc += tracenode->record->pages_alloc;
 		root_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
 	} else if (tracenode->children) {
-		iter_tracenodes(tracenode->children, collect_child_info, blob);
+		for_each_tracenode(tracenode->children, collect_child_info, blob);
 	} else {
 		log_debug("BUG: Empty Tracenode\n");
 	}
@@ -515,7 +549,7 @@ void populate_tracenode_shallow(struct Tracenode* tracenode) {
 	}
 
 	if (tracenode->children)
-		iter_tracenodes(tracenode->children, collect_child_info, tracenode->record);
+		for_each_tracenode(tracenode->children, collect_child_info, tracenode->record);
 }
 
 static int comp_tracenode_mem(const void *x, const void *y) {
@@ -541,7 +575,7 @@ static void tracenode_iter_count(struct Tracenode* _, void *blob) {
 
 static int count_tracenodes(struct Tracenode *root) {
 	int count = 0;
-	iter_tracenodes(root, tracenode_iter_count, &count);
+	for_each_tracenode(root, tracenode_iter_count, &count);
 	return count;
 }
 
@@ -556,7 +590,7 @@ struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *count,
 
 	*count = count_tracenodes(root);
 	tail = nodes = malloc(*count * sizeof(struct Tracenode*));
-	iter_tracenodes(root, tracenode_iter_collect, &tail);
+	for_each_tracenode(root, tracenode_iter_collect, &tail);
 
 	for (int i = 0; i < *count; ++i) {
 		if (shallow)
@@ -817,11 +851,11 @@ static void check_tracenode_for_module(struct Tracenode* tn, void *blob)
 		}
 
 		if (tn->children) {
-			iter_tracenodes(tn->children, check_tracenode_for_module, (*tail));
+			for_each_tracenode(tn->children, check_tracenode_for_module, (*tail));
 		}
 	} else {
 		if (tn->children) {
-			iter_tracenodes(tn->children, check_tracenode_for_module, blob);
+			for_each_tracenode(tn->children, check_tracenode_for_module, blob);
 		}
 	}
 }
@@ -832,7 +866,7 @@ static void print_summary(struct Task *tasks[], int nr_tasks)
 
 	for (int i = 0; i < nr_tasks; i++) {
 		if (to_tracenode(tasks[i])->children) {
-			iter_tracenodes(to_tracenode(tasks[i])->children, check_tracenode_for_module, NULL);
+			for_each_tracenode(to_tracenode(tasks[i])->children, check_tracenode_for_module, NULL);
 		}
 	}
 

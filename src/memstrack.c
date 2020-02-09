@@ -155,7 +155,6 @@ static void init_fds(void) {
 		log_warn("Tracing memory allocations, Press ^C to interrupt ...\n");
 		extra_fd_num = 0;
 	} else {
-		load_kallsyms();
 		extra_fd_num = 2;
 	}
 
