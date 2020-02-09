@@ -12,6 +12,7 @@ include src/backend/Makefile
 LIB_SRCS = $(BACKEND_SRCS) \
 	   src/tracing.c \
 	   src/utils.c \
+	   src/tui.c \
 	   src/proc.c
 LIB_OBJS = $(LIB_SRCS:.c=.o)
 

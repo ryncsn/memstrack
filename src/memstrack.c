@@ -12,14 +12,12 @@
 #include <sys/timerfd.h>
 #include <sys/resource.h>
 
-// For TUI support
-#include <ncurses.h>
-
 #include "backend/perf-handler.h"
 #include "backend/ftrace-handler.h"
 #include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
+#include "tui.h"
 
 int m_debug;
 int m_human;
@@ -38,12 +36,16 @@ FILE* m_output;
 
 int m_page = 1;
 int m_slab;
+int m_loop = 1;
 
 unsigned long trace_count;
 
 unsigned int page_size;
 
 char* m_perf_base;
+
+struct pollfd *m_pollfds;
+int m_pollfd_num;
 
 int m_log(int level, const char *__restrict fmt, ...){
 	if (!m_debug && level <= LOG_LVL_DEBUG) {
@@ -75,9 +77,13 @@ static void do_exit() {
 	exit(0);
 }
 
+void m_exit(void) {
+	m_loop = 0;
+}
+
 static void on_signal(int signal) {
 	log_debug("Exiting on signal %d\n", signal);
-	do_exit();
+	m_exit();
 }
 
 static struct option long_options[] =
@@ -141,231 +147,69 @@ static void set_high_priority() {
 	}
 }
 
+static void init_fds(void) {
+	int extra_fd_num;
+	int ret;
 
-static void loop_tracing(void) {
-	int err;
-	log_warn("Tracing memory allocations, Press ^C to interrupt ...\n");
-
-	if (m_perf) {
-		err = perf_handling_init();
-		if (err) {
-			log_error("Failed initializing perf event buffer: %s!", strerror(err));
-			exit(err);
-		}
-		perf_handling_start();
-		while (1) {
-			perf_handling_process();
-		}
-
-	} else if (m_ftrace) {
-		err = ftrace_handling_init();
-		if (err) {
-			log_error("Failed to open ftrace: %s!", strerror(err));
-			exit(err);
-		}
-		while (1) {
-			ftrace_handling_process();
-		}
-	}
-}
-
-#define MAX_TASK_VIEW 64
-#define MAX_CALLSITE_VIEW 64
-#define MISC_PAD 4
-// Show 300 lines
-#define MAX_VIEW 300
-
-struct TracenodeView {
-	bool extended;
-};
-
-static struct Task **sorted_tasks;
-static int highline, shiftrol, task_count;
-
-static void update_top_tasks() {
-	if (sorted_tasks)
-		free(sorted_tasks);
-
-	// TODO: No need to free / alloc every time
-	sorted_tasks = collect_tasks_sorted(&TaskMap, &task_count, 1);
-
-	for (int i = 0; i < task_count; ++i) {
-		if (!to_tracenode(sorted_tasks[i])->record->blob)
-			to_tracenode(sorted_tasks[i])->record->blob = calloc(1, sizeof(struct TracenodeView));
-	}
-};
-
-int selected_line = 0;
-
-static void trace_refresh_tui(WINDOW *win) {
-	struct Task* task;
-	struct Tracenode** nodes;
-	struct TracenodeView *view;
-	int start = MISC_PAD + 1;
-	int linelimit = LINES - MISC_PAD - 3;
-	int line_n, task_n, count;
-	char linebuffer[1024];
-
-	line_n = 0, task_n = 0;
-	update_top_tasks();
-
-	for (; task_n < task_count; ++task_n) {
-		task = sorted_tasks[task_n];
-		view = to_tracenode(task)->record->blob;
-		sprintf(linebuffer, "%5ld | %10ld | %s\n", task->pid, task->tracenode.record->pages_alloc, task->task_name);
-		linebuffer[COLS - 2] = '\0';
-		mvprintw(start + line_n++, 1,  "%s", linebuffer);
-
-		if (line_n > linelimit)
-			return;
-
-		if (view->extended) {
-			nodes = collect_tracenodes_sorted(to_tracenode(task)->children, &count, 1);
-			for (int i = 0; i < count; ++i) {
-				if (!nodes[i]->record->blob)
-					nodes[i]->record->blob = calloc(1, sizeof(struct TracenodeView));
-				mvprintw(start + line_n++, 1,  "%lx\n", nodes[i]->addr);
-				if (line_n > linelimit)
-					return;
-			}
-		}
-	}
-}
-
-static int gen_timerfd(unsigned int period)
-{
-	int fd;
-	unsigned int ns;
-	unsigned int sec;
-	struct itimerspec itval = {0};
-
-	fd = timerfd_create(CLOCK_MONOTONIC, 0);
-	if (fd < 0) {
-		log_error("Failed creating timer");
-		return -1;
-	}
-
-	/* Make the timer periodic */
-	sec = period / 1000000;
-	ns = (period - (sec * 1000000)) * 1000;
-	itval.it_interval.tv_sec = sec;
-	itval.it_interval.tv_nsec = ns;
-	itval.it_value.tv_sec = sec;
-	itval.it_value.tv_nsec = ns;
-
-	if (timerfd_settime(fd, 0, &itval, NULL)) {
-		log_error("Failed setting timer period.kn");
-		return -1;
-	}
-
-	return fd;
-}
-
-static void calc_size(WINDOW *trace_win) {
-}
-
-static void update_ui(WINDOW *trace_win) {
-	box(trace_win, 0, 0);
-	trace_refresh_tui(trace_win);
-	mvprintw(0, 0,  "'q' to quit, 'r' to reload symbols\n");
-	mvprintw(1, 0, "Trace counter: %lu\n", trace_count);
-	mvprintw(2, 0, "Total pages allocated: %lu\n", page_alloc_counter);
-	mvprintw(3, 0, "Total pages Freed: %lu\n", page_free_counter);
-
-	wrefresh(trace_win);
-	refresh();
-}
-
-static void loop_tui(void) {
-	struct pollfd *fds;
-	int ch = ' ';
-	int fd_num;
-	int win_startx, win_starty, win_width, win_height;
-	int err;
-
-	// One extra FD for UI input, one for timer, others for event polling
-	const int extra_fd_num = 2;
-
-	WINDOW *trace_win;
-
-	load_kallsyms();
-	if (m_perf) {
-		err = perf_handling_init();
-		if (err) {
-			log_error("Failed initializing perf event buffer: %s!", strerror(err));
-			exit(err);
-		}
-
-		// One for UI input, one for timer, others for event polling
-		fd_num = extra_fd_num + perf_fd_num;
-		fds = calloc(fd_num, sizeof(struct pollfd));
-
-		fds[0].fd = STDIN_FILENO;
-		fds[0].events = POLLIN;
-
-		fds[1].fd = gen_timerfd(1000 * 1000);
-		fds[1].events = POLLIN;
-
-		for (int i = extra_fd_num; i < fd_num; i++) {
-			fds[i].fd = perf_fds[i - extra_fd_num].fd;
-			fds[i].events = perf_fds[i - extra_fd_num].events;;
-		}
+	if (m_notui) {
+		log_warn("Tracing memory allocations, Press ^C to interrupt ...\n");
+		extra_fd_num = 0;
 	} else {
-		// TODO
-		log_error("Not implemented\n");
-		return;
+		load_kallsyms();
+		extra_fd_num = 2;
 	}
 
-	initscr();
-	keypad(stdscr, TRUE);
-	timeout(-1);
-	curs_set(0);
-	noecho();
-	raw();
-
-	win_height = LINES - MISC_PAD; // 4 line above for info
-	win_width = COLS;
-	win_starty = MISC_PAD;
-	win_startx = 0;
-	trace_win = newwin(win_height, win_width, win_starty, win_startx);
-	box(trace_win, 0, 0);
-	wrefresh(trace_win);
-	trace_refresh_tui(trace_win);
-
-	// TODO: ftrace
-	perf_handling_start();
-	update_ui(trace_win);
-
-	do {
-		switch (poll(fds, fd_num, 250)) {
-			// Resizing the terminal causes poll() to return -1
-			case -1:
-			default:
-				perf_handling_process_nb();
-
-				if (fds[0].revents & POLLIN) {
-					/* On UI event */
-					ch = getch();
-					switch (ch) {
-						case 'q':
-							endwin();
-							return;
-
-						case 'r':
-							load_kallsyms();
-							break;
-					}
-					update_ui(trace_win);
-				}
-
-				if (fds[1].revents & POLLIN) {
-					uint64_t time;
-					read(fds[1].fd, &time, sizeof(time));
-					update_ui(trace_win);
-				}
-
+	if (m_perf) {
+		ret = perf_handling_init();
+		if (ret) {
+			log_error("Failed initializing perf event buffer: %s!", strerror(ret));
+			exit(ret);
 		}
-	} while(1);
+
+		m_pollfd_num = extra_fd_num + perf_count_fds();
+	} else if (m_ftrace) {
+		ret = ftrace_handling_init();
+		if (ret) {
+			log_error("Failed to open ftrace: %s!", strerror(ret));
+			exit(ret);
+		}
+
+		m_pollfd_num = extra_fd_num + ftrace_count_fds();
+	} else {
+		log_error("BUG: No backend found\n");
+		exit(1);
+	}
+
+	m_pollfds = malloc(m_pollfd_num * sizeof(struct pollfd));
+	if (!m_pollfds) {
+		log_error("Out of memory when try alloc fds\n");
+	}
+
+	if (m_perf) {
+		perf_apply_fds(m_pollfds + extra_fd_num);
+		perf_handling_start();
+	} else if (m_ftrace) {
+		ftrace_apply_fds(m_pollfds + extra_fd_num);
+	}
+	tui_apply_fds(m_pollfds);
+}
+
+static void loop(void) {
+	int ret;
+
+	switch (ret = poll(m_pollfds, m_pollfd_num, 250)) {
+		// Resizing the terminal causes poll() to return -1
+		case -1:
+		default:
+			if (m_perf) {
+				perf_handling_process();
+			} else if (m_ftrace) {
+				ftrace_handling_process();
+			}
+
+			if (!m_notui)
+				tui_update();
+	}
 }
 
 int main(int argc, char **argv) {
@@ -420,14 +264,15 @@ int main(int argc, char **argv) {
 				}
 				break;
 			case 'b':
-				if (strcmp(optarg, "perf")) {
+				if (!strcmp(optarg, "perf")) {
 					m_perf = 1;
 					m_ftrace = 0;
-				} else if (strcmp(optarg, "ftrace")) {
+				} else if (!strcmp(optarg, "ftrace")) {
 					m_perf = 0;
 					m_ftrace = 1;
 				} else {
 					log_error("Unknown tracing backend '%s'.\n", optarg);
+					exit(1);
 				}
 				break;
 			case 's':
@@ -458,6 +303,7 @@ int main(int argc, char **argv) {
 	}
 
 	page_size = getpagesize();
+
 	mem_tracing_init();
 
 	if (m_show_misc) {
@@ -466,10 +312,15 @@ int main(int argc, char **argv) {
 
 	signal(SIGINT, on_signal);
 
-	if (m_notui)
-		loop_tracing();
-	else
-		loop_tui();
+	init_fds();
+
+	if (!m_notui)
+		tui_init();
+
+	while (m_loop) {
+		trace_count ++;
+		loop();
+	}
 
 	do_exit();
 }

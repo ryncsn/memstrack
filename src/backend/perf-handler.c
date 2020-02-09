@@ -217,12 +217,15 @@ int perf_handling_init() {
 		}
 	}
 
-	perf_fds = (struct pollfd*)malloc(perf_events_num * sizeof(struct pollfd));
+	return 0;
+}
+
+int perf_apply_fds(struct pollfd *fds) {
+	perf_fds = fds;
 	for (int i = 0; i < perf_events_num; i++) {
 		perf_fds[i].fd = perf_events[i].perf_fd;
 		perf_fds[i].events = POLLIN;
 	}
-
 	return 0;
 }
 
@@ -245,10 +248,8 @@ int perf_handling_start() {
 	return err;
 }
 
-int perf_handling_process_nb() {
+int perf_handling_process() {
 	int err = 0, i;
-
-	trace_count ++;
 	for (i = 0; i < perf_events_num; i++) {
 		err = perf_event_process(perf_events + i);
 		if (err) {
@@ -256,9 +257,4 @@ int perf_handling_process_nb() {
 		}
 	}
 	return err;
-}
-
-int perf_handling_process() {
-	poll(perf_fds, perf_events_num, 250);
-	return perf_handling_process_nb();
 }

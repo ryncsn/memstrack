@@ -1,6 +1,9 @@
+#define _GNU_SOURCE
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <poll.h>
 
 #include "../memstrack.h"
 #include "../tracing.h"
@@ -16,7 +19,6 @@ unsigned int lookahead;
 
 static struct Task *task;
 static struct PageEvent pevent;
-static struct AllocEvent aevent;
 static char *event;
 
 static void __ignore_stacktrace() {
@@ -63,6 +65,7 @@ static struct Tracenode* __process_stacktrace() {
 int ftrace_handling_init() {
 	char setup_events[1024], *print_header;
 	print_header = setup_events;
+
 	if (m_slab) {
 		print_header += sprintf(print_header, "kmem:kmem_cache_alloc ");
 	}
@@ -70,6 +73,12 @@ int ftrace_handling_init() {
 		print_header += sprintf(print_header, "kmem:mm_page_alloc ");
 	}
 	return ftrace_setup(&ftrace_file, setup_events);
+}
+
+int ftrace_apply_fds(struct pollfd *fds) {
+	fds[0].fd = fileno(ftrace_file);
+	fds[0].events = POLLIN;
+	return 0;
 }
 
 int ftrace_handling_clean() {
@@ -114,89 +123,94 @@ int ftrace_handle_mm_page_alloc() {
 // 	return 0;
 // }
 
-int ftrace_handling_process() {
+static void do_ftrace_process() {
 	struct Tracenode *tn;
 
-	while(lookahead || ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file)){
-		lookahead = 0;
-
-		char *pre_last = strstr(ftrace_line, ": ");
-		if (pre_last == NULL) {
-			log_error("Invalid Line: %s\n", ftrace_line);
-			__ignore_stacktrace();
-			continue;
-		}
-
-		char *last = strstr(pre_last + 2, ": "), *tmp;
-		if (last) {
-			tmp = strstr(last + 2, ": ");
-			while (tmp) {
-				pre_last = last;
-				last = tmp;
-				tmp = strstr(last + 2, ": ");
-			}
-		} else {
-			last = pre_last;
-			pre_last = NULL;
-		}
-		if (strncmp(last + 2, FTRACE_STACK_TRACE_EVENT, strlen(FTRACE_STACK_TRACE_EVENT) - 1) == 0) {
-			if (!task) {
-				log_debug("Got unexpected stacktrace!\n");
-				__ignore_stacktrace();
-			} else {
-				tn = __process_stacktrace();
-				update_record(tn, &pevent);
-				task = NULL;
-			}
-		} else {
-			char *task_info = NULL, *event_info = NULL, *pid_arg = NULL;
-			unsigned int pid = 0;
-
-			task_info = ftrace_line;
-			event_info = pre_last;
-			pid_arg = pre_last;
-
-			while(pid_arg[0] != '-') {
-				pid_arg --;
-				if (pid_arg <= ftrace_line) {
-					pid_arg = NULL;
-					break;
-				}
-			}
-
-			if (pid_arg) {
-				pid_arg[0] = '\0';
-				pid_arg++;
-				sscanf(pid_arg, "%u", &pid);
-			}
-
-			event_info[0] = '\0';
-			event_info += 2;
-
-			while(task_info[0] == ' ' || task_info[0] == '\t') {
-				task_info++;
-			}
-
-			if (!task_info || !event_info || !pid_arg) {
-				log_warn("Invalid line:\n%s\n", ftrace_line);
-				continue;
-			}
-
-			// char *event, *callsite;
-			event = strtok(event_info, " ");
-			// callsite = strtok(NULL, " ");
-			task = get_or_new_task(&TaskMap, task_info, pid);
-
-			// if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
-			// 	ftrace_handle_kmem_cache_alloc();
-			// }
-			if (strncmp(event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
-				ftrace_handle_mm_page_alloc();
-			} else {
-				log_warn("Unexpected event %s\n", event_info);
-			}
-		}
+	char *pre_last = strstr(ftrace_line, ": ");
+	if (pre_last == NULL) {
+		log_error("Invalid Line: %s\n", ftrace_line);
+		__ignore_stacktrace();
+		return;
 	}
 
+	char *last = strstr(pre_last + 2, ": "), *tmp;
+	if (last) {
+		tmp = strstr(last + 2, ": ");
+		while (tmp) {
+			pre_last = last;
+			last = tmp;
+			tmp = strstr(last + 2, ": ");
+		}
+	} else {
+		last = pre_last;
+		pre_last = NULL;
+	}
+	if (strncmp(last + 2, FTRACE_STACK_TRACE_EVENT, strlen(FTRACE_STACK_TRACE_EVENT) - 1) == 0) {
+		if (!task) {
+			log_debug("Got unexpected stacktrace!\n");
+			__ignore_stacktrace();
+		} else {
+			tn = __process_stacktrace();
+			update_record(tn, &pevent);
+			task = NULL;
+		}
+	} else {
+		char *task_info = NULL, *event_info = NULL, *pid_arg = NULL;
+		unsigned int pid = 0;
+
+		task_info = ftrace_line;
+		event_info = pre_last;
+		pid_arg = pre_last;
+
+		while(pid_arg[0] != '-') {
+			pid_arg --;
+			if (pid_arg <= ftrace_line) {
+				pid_arg = NULL;
+				break;
+			}
+		}
+
+		if (pid_arg) {
+			pid_arg[0] = '\0';
+			pid_arg++;
+			sscanf(pid_arg, "%u", &pid);
+		}
+
+		event_info[0] = '\0';
+		event_info += 2;
+
+		while(task_info[0] == ' ' || task_info[0] == '\t') {
+			task_info++;
+		}
+
+		if (!task_info || !event_info || !pid_arg) {
+			log_warn("Invalid line:\n%s\n", ftrace_line);
+			return;
+		}
+
+		// char *event, *callsite;
+		event = strtok(event_info, " ");
+		// callsite = strtok(NULL, " ");
+		task = get_or_new_task(&TaskMap, task_info, pid);
+
+		// if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
+		// 	ftrace_handle_kmem_cache_alloc();
+		// }
+		if (strncmp(event, "mm_page_alloc:", sizeof("kmem_page_alloc:") - 2) == 0) {
+			ftrace_handle_mm_page_alloc();
+		} else {
+			log_warn("Unexpected event %s\n", event_info);
+		}
+	}
+}
+
+int ftrace_handling_process() {
+	while (lookahead) {
+		lookahead = 0;
+		do_ftrace_process();
+	}
+
+	ftrace_read_next_valid_line(ftrace_line, MAX_LINE, ftrace_file);
+	do_ftrace_process();
 	return 0;
 }
