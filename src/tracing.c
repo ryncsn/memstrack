@@ -18,7 +18,22 @@ unsigned long page_alloc_counter, page_free_counter;
 static char *pid_map[65535];
 static int total_task_num;
 static unsigned long max_pfn;
-static unsigned int trivial_peak_limit = 8;
+static unsigned int trivial_peak_limit = 64;
+static int store_symbol;
+
+void store_symbol_instead(void) {
+	store_symbol = 1;
+}
+
+char* get_tracenode_symbol(struct Tracenode *node) {
+	if (!node->addr)
+		return "(null)";
+
+	if (store_symbol)
+		return node->symbol;
+	else
+		return kaddr_to_sym(node->addr);
+}
 
 static int comp_task(const void *lht, const void *rht) {
 	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
@@ -101,7 +116,14 @@ static int compTracenode(struct TreeNode *src, struct TreeNode *root) {
 	struct Tracenode *src_data = container_of(src, struct Tracenode, node);
 	struct Tracenode *root_data = container_of(root, struct Tracenode, node);
 	// TODO: Fix if symbol only available on one node
-	return (long)src_data->addr - (long)root_data->addr;
+	if (store_symbol) {
+		if (src_data->symbol && root_data->symbol)
+			return strcmp(src_data->symbol, root_data->symbol);
+		else
+			return 0;
+	} else {
+		return (long)src_data->addr - (long)root_data->addr;
+	}
 }
 
 static int is_trivial_record(struct Record *record) {
@@ -126,6 +148,16 @@ static int is_trivial_tracenode(struct Tracenode *node) {
 	return 0;
 }
 
+static void do_free_tracenode_record (struct Tracenode *tracenode) {
+	if (tracenode->record->blob) {
+		free(tracenode->record->blob);
+		tracenode->record->blob = NULL;
+	}
+
+	free(tracenode->record);
+	tracenode->record = NULL;
+}
+
 /*
  * Try to free a tracenode, if it have no child and have no memory info, then free it
  */
@@ -141,8 +173,7 @@ static void free_tracenode(struct Tracenode* tracenode) {
 
 		if (tracenode->children) {
 			if (tracenode->record) {
-				free(tracenode->record);
-				tracenode->record = NULL;
+				do_free_tracenode_record(tracenode);
 			}
 		} else {
 			struct TreeNode *tree_root = &parent->children->node;
@@ -190,7 +221,7 @@ static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigne
  * Should only be called against top of the stack
  */
 static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
-	struct Tracenode *tracenode = NULL;
+	struct Tracenode *tracenode, *last = NULL;
 
 	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
 	if (pfn > max_pfn) {
@@ -199,28 +230,30 @@ static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	}
 
 	while (nr_pages--) {
-		if (tracenode != page_map[pfn].tracenode) {
-			if (tracenode && is_trivial_tracenode(tracenode)) {
-				free_tracenode(tracenode);
-				tracenode = NULL;
-			}
+		tracenode = page_map[pfn].tracenode;
 
-			if (page_map[pfn].tracenode) {
-				tracenode = page_map[pfn].tracenode;
+		if (last != tracenode) {
+			if (last) {
+				if (is_trivial_tracenode(last))
+					free_tracenode(last);
+				last = NULL;
 			}
 		}
 
 		if (tracenode) {
-			tracenode->record->pages_alloc--;
+			last = tracenode;
+			while (tracenode && tracenode->record) {
+				tracenode->record->pages_alloc--;
+				tracenode = tracenode->parent;
+			}
 			page_free_counter++;
 		}
 
 		page_map[pfn++].tracenode = NULL;
 	}
 
-	if (tracenode && is_trivial_tracenode(tracenode)) {
-		free_tracenode(tracenode);
-		tracenode = NULL;
+	if (last && is_trivial_tracenode(last)) {
+		free_tracenode(last);
 	}
 }
 
@@ -286,12 +319,13 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, char *symbo
 
 	if (tracenode == NULL) {
 		tracenode = (struct Tracenode*)calloc(1, sizeof(struct Tracenode));
-		if (symbol) {
+		if (store_symbol) {
 			int sym_len = strlen(symbol) + 1;
 			tracenode->symbol = (char*)malloc(sym_len);
 			strcpy(tracenode->symbol, symbol);
+		} else {
+			tracenode->addr = addr;
 		}
-		tracenode->addr = addr;
 		tracenode->parent = root;
 		insert_child_tracenode(root, tracenode);
 	}
@@ -483,14 +517,7 @@ void for_each_tracenode(
 
 void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
 	if (tracenode->record && tracenode->children) {
-		if (tracenode->record->blob) {
-			free(tracenode->record->blob);
-			tracenode->record->blob = NULL;
-		}
-
-		free(tracenode->record);
-		tracenode->record = NULL;
-
+		do_free_tracenode_record(tracenode);
 		for_each_tracenode(tracenode->children, do_depopulate_tracenode, NULL);
 	}
 }
@@ -658,13 +685,7 @@ static void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	if (current->count) {
 		log_info(",\n");
 	}
-	if (tracenode->symbol) {
-		log_info("%s\"%s\": ", padding, tracenode->symbol);
-	} else if (tracenode->addr) {
-		log_info("%s\"%s\": ", padding, kaddr_to_sym(tracenode->addr));
-	} else {
-		log_info("%s\"unknown\": ", padding);
-	}
+	log_info("%s\"%s\": ", padding, get_tracenode_symbol(tracenode));
 	log_info("{\n");
 	log_info("%s \"pages_alloc\": %d", padding, tracenode->record->pages_alloc);
 	log_info(",%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
@@ -717,11 +738,7 @@ static void print_tracenode(struct Tracenode* tracenode, int current_indent, int
 	while (padding --)
 		log_info(" ");
 
-	if (tracenode->addr) {
-		log_info("%s", kaddr_to_sym(tracenode->addr));
-	} else {
-		log_info("(unknown)");
-	}
+	log_info("%s", get_tracenode_symbol(tracenode));
 
 	log_info(" Pages: %d (peak: %d)\n",
 			tracenode->record->pages_alloc,
@@ -804,7 +821,7 @@ static struct module_usage {
 
 static void check_tracenode_for_module(struct Tracenode* tn, void *blob)
 {
-	char *module_name = strstr(kaddr_to_sym(tn->addr), "[");
+	char *module_name = strstr(get_tracenode_symbol(tn), "[");
 	struct module_usage *parent_module = (struct module_usage*)blob;
 
 	if (module_name) {

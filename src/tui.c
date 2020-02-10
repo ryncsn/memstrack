@@ -81,7 +81,7 @@ static int print_tracenode(struct Tracenode *node, int indent) {
 		int i; for (i = 0; i < indent; ++i)
 			info->buffer[i] = ' ';
 
-		sprintf(info->buffer + i, "%c | %10ld | %s\n", expand_sym, node->record->pages_alloc, kaddr_to_sym(node->addr));
+		sprintf(info->buffer + i, "%c | %10ld | %s\n", expand_sym, node->record->pages_alloc, get_tracenode_symbol(node));
 	}
 
 	info->buffer[COLS - 2] = '\0';

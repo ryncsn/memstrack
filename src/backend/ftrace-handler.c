@@ -55,8 +55,10 @@ static struct Tracenode* __process_stacktrace() {
 		tp = get_or_new_child_tracenode(
 					to_tracenode(task),
 					callsite, 0);
+		try_update_record(to_tracenode(task), &pevent);
 	} else {
 		tp = get_or_new_child_tracenode(tp, callsite, 0);
+		try_update_record(tp, &pevent);
 	}
 
 	return tp;
@@ -65,6 +67,8 @@ static struct Tracenode* __process_stacktrace() {
 int ftrace_handling_init() {
 	char setup_events[1024], *print_header;
 	print_header = setup_events;
+
+	store_symbol_instead();
 
 	if (m_slab) {
 		print_header += sprintf(print_header, "kmem:kmem_cache_alloc ");
@@ -104,7 +108,6 @@ int ftrace_handle_mm_page_alloc() {
 		pevent.pages_alloc *= 2;
 	}
 
-	update_record(to_tracenode(task), &pevent);
 	return 0;
 }
 
@@ -151,7 +154,11 @@ static void do_ftrace_process() {
 			__ignore_stacktrace();
 		} else {
 			tn = __process_stacktrace();
-			update_record(tn, &pevent);
+
+			// New leaf
+			if (!tn->record)
+				update_record(tn, &pevent);
+
 			task = NULL;
 		}
 	} else {

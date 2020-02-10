@@ -153,5 +153,7 @@ int parse_zone_info(struct zone_info **zone)
 			continue;
 		zone = &(*zone)->next_zone;
 	}
+
+	fclose(file);
 	return 0;
 }
