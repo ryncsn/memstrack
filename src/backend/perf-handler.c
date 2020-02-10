@@ -35,15 +35,15 @@ static struct Tracenode* __process_stacktrace(
 {
 	struct Tracenode *tp = to_tracenode(task);
 
-	for (int i = 1; i <= (int)callchain->nr; i++) {
+	for (int i = 1; i < (int)callchain->nr; i++) {
 		unsigned long addr = *((&callchain->ips) + ((int)callchain->nr - i));
+		try_update_record(tp, event);
+
 		if (i == 1) {
 			tp = get_or_new_child_tracenode(to_tracenode(task), NULL, addr);
 		} else {
 			tp = get_or_new_child_tracenode(tp, NULL, addr);
 		}
-
-		try_update_record(tp, event);
 	}
 
 	update_record(tp, event);
