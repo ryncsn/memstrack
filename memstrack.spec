@@ -4,11 +4,10 @@ Version:        {{{ git_dir_version }}}
 Release:        1%{?dist}
 Summary:        A memory allocation trace, like a hot spot analyzer for memory allocation
 Group:          Applications/System
-License:        GPL3
-URL:            https://github.com/ryncsn/memstrack.git
+License:        GPLv3
+URL:            https://github.com/ryncsn/memstrack
 VCS:            {{{ git_dir_vcs }}}
 BuildRequires:  gcc ncurses-devel
-BuildArch:      x86_64 aarch64
 
 Source:         {{{ git_dir_pack }}}
 
@@ -32,19 +31,22 @@ make
 # memstrack binary
 mkdir -p %{buildroot}/%{_bindir}
 install -p -m 755 memstrack %{buildroot}/%{_bindir}
+
 # dracut module part
-%define dracutlibdir %{_prefix}/lib/dracut
-mkdir -p %{buildroot}/%{dracutlibdir}/modules.d/99memstrack/
-install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutlibdir}/modules.d/99memstrack/module-setup.sh
-install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutlibdir}/modules.d/99memstrack/start-tracing.sh
-install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutlibdir}/modules.d/99memstrack/stop-tracing.sh
+%define dracutlibdir %{_libdir}/dracut
+%define dracutmoduledir %{dracutlibdir}/module.d/99memstrack
+%dir %{dracutmoduledir}
+
+install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/module-setup.sh
+install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/start-tracing.sh
+install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/stop-tracing.sh
 
 %files
 %{_bindir}/memstrack
 %files dracut-memstrack
-%{dracutlibdir}/modules.d/99memstrack/module-setup.sh
-%{dracutlibdir}/modules.d/99memstrack/start-tracing.sh
-%{dracutlibdir}/modules.d/99memstrack/stop-tracing.sh
+%{dracutmoduledir}/modules.d/99memstrack/module-setup.sh
+%{dracutmoduledir}/modules.d/99memstrack/start-tracing.sh
+%{dracutmoduledir}/modules.d/99memstrack/stop-tracing.sh
 %doc
 
 %changelog
