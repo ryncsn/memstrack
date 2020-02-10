@@ -7,7 +7,7 @@ Group:          Applications/System
 License:        GPL3
 URL:            https://github.com/ryncsn/memstrack.git
 VCS:            {{{ git_dir_vcs }}}
-BuildRequires:  gcc
+BuildRequires:  gcc ncurses-devel
 BuildArch:      x86_64 aarch64
 
 Source:         {{{ git_dir_pack }}}
