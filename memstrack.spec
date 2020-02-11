@@ -35,18 +35,18 @@ install -p -m 755 memstrack %{buildroot}/%{_bindir}
 # dracut module part
 %define dracutlibdir %{_libdir}/dracut
 %define dracutmoduledir %{dracutlibdir}/module.d/99memstrack
-%dir %{dracutmoduledir}
+mkdir -p %{buildroot}/%{dracutmoduledir}
 
-install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/module-setup.sh
-install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/start-tracing.sh
-install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/modules.d/99memstrack/stop-tracing.sh
+install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/module-setup.sh
+install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduledir}/start-tracing.sh
+install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/stop-tracing.sh
 
 %files
 %{_bindir}/memstrack
 %files dracut-memstrack
-%{dracutmoduledir}/modules.d/99memstrack/module-setup.sh
-%{dracutmoduledir}/modules.d/99memstrack/start-tracing.sh
-%{dracutmoduledir}/modules.d/99memstrack/stop-tracing.sh
+%{dracutmoduledir}/module-setup.sh
+%{dracutmoduledir}/start-tracing.sh
+%{dracutmoduledir}/stop-tracing.sh
 %doc
 
 %changelog
