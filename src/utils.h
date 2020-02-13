@@ -1,27 +1,29 @@
 #ifndef _MEMORY_TRACER_UTILS
 #define _MEMORY_TRACER_UTILS 1
-#define HASH_BUCKET 1024
 
+#define HASH_BUCKET 1024
 
 struct TreeNode {
 	struct TreeNode* left;
 	struct TreeNode* right;
 };
 
+typedef int (TreeComp)(struct TreeNode *node, const void *key);
 
 struct HashNode {
-	void* key;
+	void* blob;
 	struct HashNode *next;
 };
 
+typedef unsigned int (HashOp)(const void *blob);
+typedef unsigned int (HashComp)(const void *lblob, const void *key);
 
 struct HashMap {
-	int (*hash)(const void *key);
-	int (*comp)(const void *lhk, const void* rhk);
+	HashOp *hash;
+	HashComp *comp;
 
 	struct HashNode *buckets[HASH_BUCKET];
 };
-
 
 #define for_each_hnode(hashmap_p, hnode)\
 	for (int _bucket = 0; _bucket < HASH_BUCKET; _bucket++)\
@@ -44,21 +46,18 @@ struct HashMap {
 
 
 struct TreeNode* get_tree_node(
-		struct TreeNode **root_p,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root));
+		struct TreeNode **root_p, void *key,
+		TreeComp comp);
 
 
 struct TreeNode* get_remove_tree_node(
-		struct TreeNode **root_p,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root));
+		struct TreeNode **root_p, void *key,
+		TreeComp comp);
 
 
 void insert_tree_node(
-		struct TreeNode **root_p,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root));
+		struct TreeNode **root_p, struct TreeNode *src, void *key,
+		TreeComp comp);
 
 void iter_tree_node(
 		struct TreeNode *root,

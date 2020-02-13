@@ -52,12 +52,10 @@ static struct Tracenode* __process_stacktrace() {
 	tp = __process_stacktrace();
 
 	if (tp == NULL) {
-		tp = get_or_new_child_tracenode(
-					to_tracenode(task),
-					callsite, 0);
+		tp = get_or_new_child_tracenode(to_tracenode(task), strdup(callsite));
 		try_update_record(to_tracenode(task), &pevent);
 	} else {
-		tp = get_or_new_child_tracenode(tp, callsite, 0);
+		tp = get_or_new_child_tracenode(tp, strdup(callsite));
 		try_update_record(tp, &pevent);
 	}
 

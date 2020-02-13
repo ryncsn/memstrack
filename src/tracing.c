@@ -19,30 +19,34 @@ static char *pid_map[65535];
 static int total_task_num;
 static unsigned long max_pfn;
 static unsigned int trivial_peak_limit = 64;
-static int store_symbol;
+
+enum key_type {
+	KEY_ADDR = 0,
+	KEY_SYMBOL,
+} key_type;
 
 void store_symbol_instead(void) {
-	store_symbol = 1;
+	key_type = KEY_SYMBOL;
 }
 
 char* get_tracenode_symbol(struct Tracenode *node) {
-	if (!node->addr)
+	if (!node->key)
 		return "(null)";
 
-	if (store_symbol)
+	if (key_type == KEY_SYMBOL)
 		return node->symbol;
 	else
 		return kaddr_to_sym(node->addr);
 }
 
-static int comp_task(const void *lht, const void *rht) {
+static unsigned int comp_task(const void *lht, const void *rht) {
 	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
 	if (!diff)
 		diff = strncmp(((struct Task*)lht)->task_name, ((struct Task*)rht)->task_name, TASK_NAME_LEN_MAX);
 	return diff;
 }
 
-static int hash_task(const void *task) {
+static unsigned int hash_task(const void *task) {
 	int hash = ((unsigned int)((struct Task*)task)->pid);
 
 	// for (int i = 0; i < (int)strlen(((struct Task*)task)->task_name); ++i) {
@@ -61,7 +65,7 @@ struct HashMap TaskMap = {
 struct PageRecord *page_map;
 
 static struct symbol {
-	unsigned long addr;
+	addr_t addr;
 	char type;
 	char* module_name;
 	char* sym_name;
@@ -112,17 +116,12 @@ void mem_tracing_init() {
 	page_map = calloc(max_pfn, sizeof(struct PageRecord));
 }
 
-static int compTracenode(struct TreeNode *src, struct TreeNode *root) {
-	struct Tracenode *src_data = container_of(src, struct Tracenode, node);
+static int compTracenode(struct TreeNode *root, const void *key) {
 	struct Tracenode *root_data = container_of(root, struct Tracenode, node);
-	// TODO: Fix if symbol only available on one node
-	if (store_symbol) {
-		if (src_data->symbol && root_data->symbol)
-			return strcmp(src_data->symbol, root_data->symbol);
-		else
-			return 0;
+	if (key_type == KEY_SYMBOL) {
+		return strcmp(root_data->symbol, key);
 	} else {
-		return (long)src_data->addr - (long)root_data->addr;
+		return (long long)root_data->addr - (long long)key;
 	}
 }
 
@@ -177,7 +176,7 @@ static void free_tracenode(struct Tracenode* tracenode) {
 			}
 		} else {
 			struct TreeNode *tree_root = &parent->children->node;
-			get_remove_tree_node(&tree_root, &tracenode->node, compTracenode);
+			get_remove_tree_node(&tree_root, tracenode->key, compTracenode);
 
 			if (tree_root) {
 				parent->children = container_of(tree_root, struct Tracenode, node);
@@ -281,18 +280,14 @@ void try_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
 }
 
 
-struct Tracenode* get_child_tracenode(struct Tracenode *tnode, char *symbol, unsigned long addr) {
+struct Tracenode* get_child_tracenode(struct Tracenode *tnode, void *key) {
 	if (tnode->children == NULL) {
 		return NULL;
 	}
 
 	struct TreeNode *tree_node = &tnode->children->node, *ret_node = NULL;
-	struct Tracenode cs_key;
 
-	cs_key.symbol = symbol;
-	cs_key.addr = addr;
-
-	ret_node = get_tree_node(&tree_node, &cs_key.node, compTracenode);
+	ret_node = get_tree_node(&tree_node, key, compTracenode);
 	tnode->children = container_of(tree_node, struct Tracenode, node);
 	if (ret_node) {
 		return container_of(ret_node, struct Tracenode, node);
@@ -301,31 +296,25 @@ struct Tracenode* get_child_tracenode(struct Tracenode *tnode, char *symbol, uns
 	}
 }
 
-struct Tracenode* insert_child_tracenode(struct Tracenode *tnode, struct Tracenode *src){
+static void insert_child_tracenode(struct Tracenode *tnode, struct Tracenode *src){
 	if (tnode->children == NULL) {
 		tnode->children = src;
-		return src;
+		return;
 	}
 
 	struct TreeNode *tree_node = &tnode->children->node;
-	insert_tree_node(&tree_node, &src->node, compTracenode);
+	insert_tree_node(&tree_node, &src->node, src->key, compTracenode);
 	tnode->children = container_of(tree_node, struct Tracenode, node);
-	return src;
+	return;
 }
 
-struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, char *symbol, unsigned long addr){
+struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 	struct Tracenode *tracenode;
-	tracenode = get_child_tracenode(root, symbol, addr);
+	tracenode = get_child_tracenode(root, key);
 
 	if (tracenode == NULL) {
 		tracenode = (struct Tracenode*)calloc(1, sizeof(struct Tracenode));
-		if (store_symbol) {
-			int sym_len = strlen(symbol) + 1;
-			tracenode->symbol = (char*)malloc(sym_len);
-			strcpy(tracenode->symbol, symbol);
-		} else {
-			tracenode->addr = addr;
-		}
+		tracenode->key = key;
 		tracenode->parent = root;
 		insert_child_tracenode(root, tracenode);
 	}
@@ -409,6 +398,7 @@ void load_kallsyms() {
 	char read_buf[4096];
 
 	while(fgets(read_buf, 4096, proc_kallsyms)) {
+		unsigned long long addr;
 		char *addr_arg = strtok(read_buf, " ");
 		char *type_arg = strtok(NULL, " ");
 		char *symbol_arg = strtok(NULL, " ");
@@ -428,11 +418,12 @@ void load_kallsyms() {
 		}
 
 		symbol->symbol.type = *type_arg;
-		sscanf(addr_arg, "%lx", &symbol->symbol.addr);
+		sscanf(addr_arg, "%llx", &addr);
 		symbol->symbol.sym_name = malloc(strlen(symbol_arg) + 1);
 		strcpy(symbol->symbol.sym_name, symbol_arg);
 		*sym_buf_tail_p = symbol;
 		sym_buf_tail_p = &symbol->next;
+		symbol->symbol.addr = (addr_t)addr;
 
 		symbol_table_len ++;
 	}
@@ -451,8 +442,8 @@ void load_kallsyms() {
 	qsort((void*)symbol_table, symbol_table_len, sizeof(struct symbol), comp_symbol);
 }
 
-char* kaddr_to_sym(unsigned long long addr) {
-	static char str_buffer[4096];
+char* kaddr_to_sym(addr_t addr) {
+	static char str_buffer[1024];
 	int left = 0, right = symbol_table_len, mid;
 	do {
 		mid = (left + right) / 2;
@@ -470,7 +461,7 @@ char* kaddr_to_sym(unsigned long long addr) {
 		}
 	} while (1);
 
-	sprintf(str_buffer, "%s %s (0x%llx)", symbol_table[mid].sym_name, symbol_table[mid].module_name, addr);
+	sprintf(str_buffer, "%s %s (0x%llx)", symbol_table[mid].sym_name, symbol_table[mid].module_name, (unsigned long long)addr);
 	return str_buffer;
 };
 
@@ -506,12 +497,10 @@ void for_each_tracenode(
 	op(root, blob);
 
 	if (have_left_child(root, node)) {
-		for_each_tracenode(left_child(root, struct Tracenode, node),
-				op, blob);
+		for_each_tracenode(left_child(root, struct Tracenode, node), op, blob);
 	}
 	if (have_right_child(root, node)) {
-		for_each_tracenode(right_child(root, struct Tracenode, node),
-				op, blob);
+		for_each_tracenode(right_child(root, struct Tracenode, node), op, blob);
 	}
 }
 

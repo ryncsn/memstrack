@@ -60,20 +60,19 @@ static int get_tree_depth(struct TreeNode *root) {
 }
 
 struct TreeNode* get_tree_node(
-		struct TreeNode **root,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root))
+		struct TreeNode **root, void *key,
+		TreeComp comp)
 {
 	int result;
 	while (*root) {
-		result = comp(src, *root);
+		result = comp(*root, key);
 		if (result == 0) {
 			return *root;
 		} else if (result < 0) {
 			if (!(*root)->left) {
 				return NULL;
 			}
-			result = comp(src, (*root)->left);
+			result = comp((*root)->left, key);
 			try_right_rotate(root);
 			if (result == 0) {
 				return *root;
@@ -86,7 +85,7 @@ struct TreeNode* get_tree_node(
 			if (!(*root)->right) {
 				return NULL;
 			}
-			result = comp(src, (*root)->right);
+			result = comp((*root)->right, key);
 			try_left_rotate(root);
 			if (result == 0) {
 				return *root;
@@ -101,20 +100,19 @@ struct TreeNode* get_tree_node(
 }
 
 struct TreeNode* get_remove_tree_node(
-		struct TreeNode **root,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root))
+		struct TreeNode **root, void *key,
+		TreeComp comp)
 {
 	int result;
 	while (*root) {
-		result = comp(src, *root);
+		result = comp(*root, key);
 		if (result == 0) {
 			return remove_tree_node(root);
 		} else if (result < 0) {
 			if (!(*root)->left) {
 				return NULL;
 			}
-			result = comp(src, (*root)->left);
+			result = comp((*root)->left, key);
 			try_right_rotate(root);
 			if (result == 0) {
 				return remove_tree_node(root);
@@ -127,7 +125,7 @@ struct TreeNode* get_remove_tree_node(
 			if (!(*root)->right) {
 				return NULL;
 			}
-			result = comp(src, (*root)->right);
+			result = comp((*root)->right, key);
 			try_left_rotate(root);
 			if (result == 0) {
 				return remove_tree_node(root);
@@ -138,13 +136,13 @@ struct TreeNode* get_remove_tree_node(
 			}
 		}
 	}
+
 	return NULL;
 }
 
 void insert_tree_node(
-		struct TreeNode **root_p,
-		struct TreeNode *src,
-		int (*comp)(struct TreeNode *src, struct TreeNode *root))
+		struct TreeNode **root_p, struct TreeNode *src, void *key,
+		TreeComp comp)
 {
 	struct TreeNode *root = *root_p;
 	int result;
@@ -153,7 +151,7 @@ void insert_tree_node(
 		*root_p = src;
 
 	while (1) {
-		result = comp(src, root);
+		result = comp(root, key);
 		if (result == 0) {
 			return;
 		} else if (result < 0) {
@@ -198,7 +196,7 @@ struct HashNode* get_hash_node(
 		void *key)
 {
 	struct HashNode *node = map->buckets[map->hash(key) % HASH_BUCKET];
-	while (node != NULL && map->comp(node->key, key) != 0) {
+	while (node != NULL && map->comp(node->blob, key) != 0) {
 		node = node->next;
 	}
 	return node;
@@ -207,10 +205,10 @@ struct HashNode* get_hash_node(
 struct HashNode* insert_hash_node(
 		struct HashMap* map,
 		struct HashNode* src,
-		void *key)
+		void *blob)
 {
-	struct HashNode **node = &(map->buckets[map->hash(key) % HASH_BUCKET]);
+	struct HashNode **node = &(map->buckets[map->hash(blob) % HASH_BUCKET]);
 	src->next = *node;
-	src->key = key;
+	src->blob = blob;
 	return *node = src;
 }
