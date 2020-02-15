@@ -30,15 +30,16 @@ static struct pollfd *ui_fds;
 static WINDOW *trace_win;
 
 static struct Task **sorted_tasks;
-static int task_count;
+static int tasks_num;
 static void update_top_tasks() {
 	if (sorted_tasks)
 		free(sorted_tasks);
 
 	// TODO: No need to free / alloc every time
-	sorted_tasks = collect_tasks_sorted(&TaskMap, &task_count, 1);
+	sorted_tasks = collect_tasks_sorted(&task_map, 1);
+	tasks_num = task_map.size;
 
-	for (int i = 0; i < task_count; ++i) {
+	for (int i = 0; i < tasks_num; ++i) {
 		if (!to_tracenode(sorted_tasks[i])->record->blob)
 			to_tracenode(sorted_tasks[i])->record->blob = calloc(1, sizeof(struct TracenodeView));
 	}
@@ -114,7 +115,7 @@ static void trace_refresh_tui() {
 
 	info = &line_info;
 
-	for (int task_n = 0; task_n < task_count; ++task_n) {
+	for (int task_n = 0; task_n < tasks_num; ++task_n) {
 		print_tracenode(to_tracenode(sorted_tasks[task_n]), 0);
 	}
 }
@@ -159,7 +160,7 @@ static void expend_line(int line) {
 
 	info = &line_info;
 
-	for (int task_n = 0; task_n < task_count; ++task_n) {
+	for (int task_n = 0; task_n < tasks_num; ++task_n) {
 		if (try_extend_tracenode(to_tracenode(sorted_tasks[task_n]), 1))
 			break;
 	}

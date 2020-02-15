@@ -8,22 +8,27 @@ struct TreeNode {
 	struct TreeNode* right;
 };
 
-typedef int (TreeComp)(struct TreeNode *node, const void *key);
+typedef int (TreeComp)(const struct TreeNode *node, const void *key);
 
 struct HashNode {
-	void* blob;
 	struct HashNode *next;
 };
 
-typedef unsigned int (HashOp)(const void *blob);
-typedef unsigned int (HashComp)(const void *lblob, const void *key);
+typedef unsigned int (HashOp)(const void *key);
+typedef unsigned int (HashComp)(const struct HashNode *blob, const void *key);
 
 struct HashMap {
+	int size;
 	HashOp *hash;
 	HashComp *comp;
 
 	struct HashNode *buckets[HASH_BUCKET];
 };
+
+#define HASH_MAP(hash, comp, name)\
+	struct HashMap name = {\
+		0, hash, comp, {NULL}\
+	};
 
 #define for_each_hnode(hashmap_p, hnode)\
 	for (int _bucket = 0; _bucket < HASH_BUCKET; _bucket++)\
@@ -70,7 +75,7 @@ struct HashNode* get_hash_node(
 		void *key);
 
 
-struct HashNode* insert_hash_node(
+void insert_hash_node(
 		struct HashMap* map,
 		struct HashNode* src,
 		void *key);

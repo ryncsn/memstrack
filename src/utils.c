@@ -136,7 +136,6 @@ struct TreeNode* get_remove_tree_node(
 			}
 		}
 	}
-
 	return NULL;
 }
 
@@ -196,19 +195,19 @@ struct HashNode* get_hash_node(
 		void *key)
 {
 	struct HashNode *node = map->buckets[map->hash(key) % HASH_BUCKET];
-	while (node != NULL && map->comp(node->blob, key) != 0) {
+	while (node != NULL && map->comp(node, key) != 0) {
 		node = node->next;
 	}
 	return node;
 }
 
-struct HashNode* insert_hash_node(
+void insert_hash_node(
 		struct HashMap* map,
 		struct HashNode* src,
-		void *blob)
+		void *key)
 {
-	struct HashNode **node = &(map->buckets[map->hash(blob) % HASH_BUCKET]);
+	struct HashNode **node = &(map->buckets[map->hash(key) % HASH_BUCKET]);
 	src->next = *node;
-	src->blob = blob;
-	return *node = src;
+	*node = src;
+	map->size ++;
 }

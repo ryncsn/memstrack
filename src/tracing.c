@@ -16,7 +16,6 @@
 unsigned long page_alloc_counter, page_free_counter;
 
 static char *pid_map[65535];
-static int total_task_num;
 static unsigned long max_pfn;
 static unsigned int trivial_peak_limit = 64;
 
@@ -39,15 +38,17 @@ char* get_tracenode_symbol(struct Tracenode *node) {
 		return kaddr_to_sym(node->addr);
 }
 
-static unsigned int comp_task(const void *lht, const void *rht) {
-	int diff = ((struct Task*)lht)->pid - ((struct Task*)rht)->pid;
+static unsigned int comp_task(const struct HashNode *hnode, const void *key) {
+	const struct Task *lht = container_of(hnode, struct Task, node);
+	const struct Task *rht = key;
+	int diff = lht->pid - rht->pid;
 	if (!diff)
-		diff = strncmp(((struct Task*)lht)->task_name, ((struct Task*)rht)->task_name, TASK_NAME_LEN_MAX);
+		diff = strcmp(lht->task_name, rht->task_name);
 	return diff;
 }
 
-static unsigned int hash_task(const void *task) {
-	int hash = ((unsigned int)((struct Task*)task)->pid);
+static unsigned int hash_task(const void *key) {
+	int hash = ((struct Task *)key)->pid;
 
 	// for (int i = 0; i < (int)strlen(((struct Task*)task)->task_name); ++i) {
 	// 	hash = hash * 31 + ((struct Task*)task)->task_name[i];
@@ -56,11 +57,7 @@ static unsigned int hash_task(const void *task) {
 	return hash;
 }
 
-struct HashMap TaskMap = {
-	hash_task,
-	comp_task,
-	{NULL},
-};
+HASH_MAP(hash_task, comp_task, task_map);
 
 struct PageRecord *page_map;
 
@@ -116,7 +113,7 @@ void mem_tracing_init() {
 	page_map = calloc(max_pfn, sizeof(struct PageRecord));
 }
 
-static int compTracenode(struct TreeNode *root, const void *key) {
+static int compTracenode(const struct TreeNode *root, const void *key) {
 	struct Tracenode *root_data = container_of(root, struct Tracenode, node);
 	if (key_type == KEY_SYMBOL) {
 		return strcmp(root_data->symbol, key);
@@ -322,13 +319,13 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 	return tracenode;
 }
 
-static struct Task* try_get_task(char* task_name, int pid) {
+static struct Task* try_get_task(char* task_name, long pid) {
 	struct Task task_key;
 	struct HashNode *hnode;
 
 	task_key.pid = pid;
 	task_key.task_name = task_name;
-	hnode = get_hash_node(&TaskMap, &task_key);
+	hnode = get_hash_node(&task_map, &task_key);
 
 	if (hnode) {
 		return container_of(
@@ -338,13 +335,6 @@ static struct Task* try_get_task(char* task_name, int pid) {
 	} else {
 		return NULL;
 	}
-};
-
-struct Task* insert_task(struct HashMap *map, struct Task* task) {
-	return container_of
-		(insert_hash_node(map, &task->node, task),
-		 struct Task,
-		 node);
 };
 
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
@@ -363,8 +353,8 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 		task->task_name = (char*)malloc(task_name_len);
 		task->pid = pid;
 		strcpy(task->task_name, task_name);
-		total_task_num++;
-		return insert_task(map, task);
+		insert_hash_node(map, &task->node, task);
+		return task;
 	}
 	return task;
 };
@@ -472,18 +462,20 @@ int for_each_tracenode_ret(
 {
 	int ret;
 	ret = op(root, blob);
+	if (ret < 0)
+		return ret;
 
 	if (have_left_child(root, node)) {
 		ret = for_each_tracenode_ret(left_child(root, struct Tracenode, node),
 				op, blob);
-		if (ret)
-			return ret;
 	}
+
+	if (ret < 0)
+		return ret;
+
 	if (have_right_child(root, node)) {
 		ret = for_each_tracenode_ret(right_child(root, struct Tracenode, node),
 				op, blob);
-		if (ret)
-			return ret;
 	}
 
 	return ret;
@@ -636,15 +628,12 @@ static int comp_task_mem(const void *x, const void *y) {
 	}
 }
 
-struct Task **collect_tasks_sorted(struct HashMap *map, int *count, int shallow) {
+struct Task **collect_tasks_sorted(struct HashMap *map, int shallow) {
 	struct HashNode *hnode = NULL;
 	struct Task **tasks;
 	int i = 0;
 
-	if (count)
-		*count = total_task_num;
-
-	tasks = malloc(total_task_num * sizeof(struct Task*));
+	tasks = malloc(task_map.size * sizeof(struct Task*));
 	for_each_hnode(map, hnode) {
 		tasks[i] = container_of(hnode, struct Task, node);
 
@@ -656,7 +645,7 @@ struct Task **collect_tasks_sorted(struct HashMap *map, int *count, int shallow)
 		i++;
 	}
 
-	qsort((void*)tasks, total_task_num, sizeof(struct Task*), comp_task_mem);
+	qsort((void*)tasks, task_map.size, sizeof(struct Task*), comp_task_mem);
 
 	return tasks;
 }
@@ -799,90 +788,139 @@ static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limi
 }
 
 /*
- * Collect top 10 modules, and their top 3 alloc stack
+ * Collect stack by modules
  */
-static struct module_usage {
-	char *name;
-	long pages;
-	struct Tracenode *top_node[3];
-	struct module_usage *next;
-} *module_usages;
+int module_count;
 
-static void check_tracenode_for_module(struct Tracenode* tn, void *blob)
+struct Module {
+	struct HashNode node;
+	char *name;
+	unsigned int pages;
+	struct Tracenode root;
+};
+
+static unsigned int comp_module(const struct HashNode *hnode, const void *key) {
+	struct Module *mod = container_of(hnode, struct Module, node);
+	return strcmp(mod->name, key);
+}
+
+static unsigned int hash_module(const void *key) {
+	const char *name = key;
+	int hash = 42;
+
+	for (int i = 0; i < (int)strlen(name); ++i) {
+		hash = hash * 31 + name[i];
+	}
+
+	return hash;
+}
+
+HASH_MAP(hash_module, comp_module, module_map);
+
+static struct Module *get_or_new_module(char *name)
 {
-	char *module_name = strstr(get_tracenode_symbol(tn), "[");
-	struct module_usage *parent_module = (struct module_usage*)blob;
+	struct Module *module;
+	struct HashNode *hnode;
+	hnode = get_hash_node(&module_map, name);
+	if (!hnode) {
+		module = calloc(1, sizeof(struct Module));
+		module->name = strdup(name);
+		module->root.record = calloc(1, sizeof(struct Record));
+		insert_hash_node(&module_map, &module->node, name);
+	} else {
+		module = container_of(hnode, struct Module, node);
+	}
+	return module;
+}
+
+static struct Tracenode *merge_into_module(struct Tracenode *node, struct Module *module) {
+	struct Tracenode *pnode;
+
+	if (node->parent) {
+		pnode = merge_into_module(node->parent, module);
+	} else {
+		pnode = &module->root;
+	}
+
+	pnode = get_or_new_child_tracenode(pnode, node->key);
+
+	// TODO: User a helper to alloc Record
+	if (node->record) {
+		if (!pnode->record)
+			pnode->record = calloc(1, sizeof(struct Record));
+
+		pnode->record->pages_alloc += node->record->pages_alloc;
+	}
+
+	return pnode;
+}
+
+/* Return number of modules touched */
+static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
+{
+	char *module_name = strstr(get_tracenode_symbol(node), "["); /* XXX: dumb but works */
+	struct Module *module = (struct Module *)blob;
 
 	if (module_name) {
-		struct module_usage **tail = &module_usages;
-
-		if (parent_module) {
-			if (strcmp(module_name, parent_module->name) != 0) {
-				if (tn->record->pages_alloc > (parent_module->pages * 85 / 100)) {
-					tail = &parent_module;
-					free((*tail)->name);
-					(*tail)->name = strdup(module_name);
-				}
-			}
-		} else {
-			while (*tail) {
-				if ((*tail)->name != NULL) {
-					if (strcmp(module_name, (*tail)->name) == 0) {
-						break;
-					}
-				}
-				tail = &(*tail)->next;
-			}
-
-			if (!*tail) {
-				*tail = calloc(1, sizeof(struct module_usage));
-				(*tail)->name = strdup(module_name);
-			}
-
-			if (m_sort_alloc)
-				(*tail)->pages += tn->record->pages_alloc;
-			else if (m_sort_peak)
-				(*tail)->pages += tn->record->pages_alloc_peak;
-		}
-
-		for (int i = 0; i < 3; ++i) {
-			if (!(*tail)->top_node[i]) {
-				(*tail)->top_node[i] = tn;
-			} else if ((*tail)->top_node[i]->record->pages_alloc < tn->record->pages_alloc) {
-				(*tail)->top_node[i] = tn;
-				for (int j = i + 1; j < 3; ++j, ++i) {
-					(*tail)->top_node[j] = (*tail)->top_node[i];
-				}
-			}
-		}
-
-		if (tn->children) {
-			for_each_tracenode(tn->children, check_tracenode_for_module, (*tail));
-		}
-	} else {
-		if (tn->children) {
-			for_each_tracenode(tn->children, check_tracenode_for_module, blob);
-		}
+		strstr(module_name, "]")[1] = '\0';
+		module = get_or_new_module(module_name);
 	}
+
+	if (node->children) {
+		for_each_tracenode(node->children, do_gather_tracenodes_by_module, module);
+	} else if (module) {
+		merge_into_module(node, module);
+	}
+}
+
+static int comp_module_mem(const void *x, const void *y) {
+	long long x_mem, y_mem;
+
+	struct Module *x_t = *(struct Module**)x;
+	struct Module *y_t = *(struct Module**)y;
+
+	x_mem = x_t->root.record->pages_alloc * page_size;
+	y_mem = y_t->root.record->pages_alloc * page_size;
+
+	if (x_mem == y_mem) {
+		return 0;
+	} else {
+		return (y_mem - x_mem) > 0 ? 1 : -1;
+	}
+}
+
+struct Module **collect_modules_sorted() {
+	struct Task *task;
+	struct HashNode *hnode;
+	struct Module **modules;
+	int i = 0;
+
+	for_each_hnode(&task_map, hnode) {
+		task = container_of(hnode, struct Task, node);
+		if (to_tracenode(task)->children)
+			for_each_tracenode(to_tracenode(task)->children, do_gather_tracenodes_by_module, NULL);
+	}
+
+	modules = malloc(module_map.size * sizeof(struct Module*));
+	for_each_hnode(&module_map, hnode) {
+		modules[i] = container_of(hnode, struct Module, node);
+		populate_tracenode(&modules[i]->root);
+		i++;
+	}
+
+	qsort((void*)modules, module_map.size, sizeof(struct Modules*), comp_module_mem);
+
+	return modules;
 }
 
 static void print_summary(struct Task *tasks[], int nr_tasks)
 {
-	int indent = 2;
+	struct Module **modules;
 
-	for (int i = 0; i < nr_tasks; i++) {
-		if (to_tracenode(tasks[i])->children) {
-			for_each_tracenode(to_tracenode(tasks[i])->children, check_tracenode_for_module, NULL);
-		}
-	}
-
-	while (module_usages) {
-		log_info("Module %s using %d pages", module_usages->name, module_usages->pages);
-		for (int i = 0; i < 3; ++i) {
-			if (module_usages->top_node[i])
-				print_tracenode(module_usages->top_node[i], indent, 1, m_throttle);
-		}
-		module_usages = module_usages->next;
+	modules = collect_modules_sorted();
+	for (int i = 0; i < module_map.size; ++i) {
+		struct Module *module = modules[i];
+		log_info("Module %s using %d pages\n", module->name, module->root.record->pages_alloc);
 	}
 }
 
@@ -891,13 +929,13 @@ void final_report(struct HashMap *task_map, int task_limit) {
 	struct Task **tasks;
 
 	if (!task_limit) {
-		task_limit = total_task_num;
+		task_limit = task_map->size;
 	}
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
-	tasks = collect_tasks_sorted(task_map, NULL, 0);
+	tasks = collect_tasks_sorted(task_map, 0);
 
 	load_kallsyms();
 

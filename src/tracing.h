@@ -8,7 +8,7 @@
 
 typedef void* addr_t;
 
-extern struct HashMap TaskMap;
+extern struct HashMap task_map;
 
 extern unsigned long trace_count;
 extern unsigned long page_alloc_counter, page_free_counter;
@@ -85,9 +85,8 @@ void depopulate_tracenode(struct Tracenode* tracenode);
 struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);
 struct Task* get_task(struct HashMap *map, char* task_name, int pid);
-struct Task* insert_task(struct HashMap *map, struct Task* task);
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
-struct Task **collect_tasks_sorted(struct HashMap *map, int *count, int shallow);
+struct Task **collect_tasks_sorted(struct HashMap *map, int shallow);
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 
 void final_report(struct HashMap *map, int task_limit);

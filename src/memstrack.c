@@ -70,7 +70,7 @@ static void do_exit() {
 	if (m_perf) {
 		perf_handling_clean();
 	}
-	final_report(&TaskMap, 0);
+	final_report(&task_map, 0);
 	if (m_output != stdout) {
 		fclose(m_output);
 	}
@@ -252,7 +252,7 @@ int main(int argc, char **argv) {
 					free(m_output_path);
 					m_output_path = NULL;
 				}
-				log_error("Opening %s!\n", optarg);
+				log_debug("Detailed report will be write to %s.\n", optarg);
 				m_output_path = strdup(optarg);
 				break;
 			case 't':

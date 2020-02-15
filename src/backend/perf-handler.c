@@ -110,7 +110,7 @@ int perf_handle_mm_page_alloc(struct PerfEvent *perf_event, const unsigned char*
 
 	header = __process_common(perf_event, header, &body, &callchain, &raw, (void**)&raw_data);
 
-	task = get_or_new_task(&TaskMap, NULL, body->pid);
+	task = get_or_new_task(&task_map, NULL, body->pid);
 	event.pages_alloc = 1;
 	event.pfn = raw_data->pfn;
 

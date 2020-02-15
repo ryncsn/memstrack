@@ -9,7 +9,7 @@ mandir ?= ${prefix}/share/man
 dracutlibdir ?= ${prefix}/lib/dracut
 
 CC = gcc
-CFLAGS = -std=c11 -g -O2
+CFLAGS = -std=c11 -g -O0
 LDFLAGS = -lncurses
 
 include src/Makefile
