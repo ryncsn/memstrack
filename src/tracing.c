@@ -28,6 +28,17 @@ void store_symbol_instead(void) {
 	key_type = KEY_SYMBOL;
 }
 
+char* get_tracenode_module(struct Tracenode *node) {
+	if (!node->key)
+		return NULL;
+
+	if (key_type == KEY_SYMBOL)
+		// TODO
+		return NULL;
+	else
+		return kaddr_to_module(node->addr);
+}
+
 char* get_tracenode_symbol(struct Tracenode *node) {
 	if (!node->key)
 		return "(null)";
@@ -389,19 +400,17 @@ void load_kallsyms() {
 
 	while(fgets(read_buf, 4096, proc_kallsyms)) {
 		unsigned long long addr;
-		char *addr_arg = strtok(read_buf, " ");
-		char *type_arg = strtok(NULL, " ");
-		char *symbol_arg = strtok(NULL, " ");
-		char *module_arg = strtok(NULL, " ");
+		char *addr_arg = strtok(read_buf, " \t");
+		char *type_arg = strtok(NULL, " \t");
+		char *symbol_arg = strtok(NULL, " \t");
+		char *module_arg = strtok(NULL, " \t");
 
 		struct symbol_buf *symbol = malloc(sizeof(struct symbol_buf));
 		if (module_arg) {
 			module_arg[strlen(module_arg) - 1] = '\0';
-			while (module_arg[0] == ' ') {
-				module_arg++;
-			}
-			symbol->symbol.module_name = malloc(strlen(module_arg) + 1);
-			strcpy(symbol->symbol.module_name, module_arg);
+			module_arg[strlen(module_arg) - 2] = '\0';
+			module_arg++;
+			symbol->symbol.module_name = strdup(module_arg);
 		} else {
 			symbol_arg[strlen(symbol_arg) - 1] = '\0';
 			symbol->symbol.module_name = NULL;
@@ -409,8 +418,7 @@ void load_kallsyms() {
 
 		symbol->symbol.type = *type_arg;
 		sscanf(addr_arg, "%llx", &addr);
-		symbol->symbol.sym_name = malloc(strlen(symbol_arg) + 1);
-		strcpy(symbol->symbol.sym_name, symbol_arg);
+		symbol->symbol.sym_name = strdup(symbol_arg);
 		*sym_buf_tail_p = symbol;
 		sym_buf_tail_p = &symbol->next;
 		symbol->symbol.addr = (addr_t)addr;
@@ -432,9 +440,9 @@ void load_kallsyms() {
 	qsort((void*)symbol_table, symbol_table_len, sizeof(struct symbol), comp_symbol);
 }
 
-char* kaddr_to_sym(addr_t addr) {
-	static char str_buffer[1024];
+static struct symbol* kaddr_to_symbol(addr_t addr) {
 	int left = 0, right = symbol_table_len, mid;
+
 	do {
 		mid = (left + right) / 2;
 		if (mid == left || mid == right) {
@@ -451,8 +459,46 @@ char* kaddr_to_sym(addr_t addr) {
 		}
 	} while (1);
 
-	sprintf(str_buffer, "%s %s (0x%llx)", symbol_table[mid].sym_name, symbol_table[mid].module_name, (unsigned long long)addr);
-	return str_buffer;
+	return symbol_table + mid;
+}
+
+char* kaddr_to_module(addr_t addr) {
+	static char *buffer;
+
+	struct symbol *sym = kaddr_to_symbol(addr);
+
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
+	}
+
+	if (sym && sym->module_name)
+		buffer = strdup(sym->module_name);
+
+	return buffer;
+};
+
+char* kaddr_to_sym(addr_t addr) {
+	static char *buffer;
+
+	struct symbol *sym = kaddr_to_symbol(addr);
+
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
+	}
+
+	if (sym) {
+		if (sym->module_name) {
+			buffer = malloc(strlen(sym->sym_name) + strlen(sym->module_name) + 16 + 6 + 1);
+			sprintf(buffer, "%s %s (0x%llx)", sym->sym_name, sym->module_name, (unsigned long long)addr);
+		} else {
+			buffer = malloc(strlen(sym->sym_name) + 16 + 6 + 1);
+			sprintf(buffer, "%s (0x%llx)", sym->sym_name, (unsigned long long)addr);
+		}
+	}
+
+	return buffer;
 };
 
 int for_each_tracenode_ret(
@@ -858,11 +904,10 @@ static struct Tracenode *merge_into_module(struct Tracenode *node, struct Module
 /* Return number of modules touched */
 static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
 {
-	char *module_name = strstr(get_tracenode_symbol(node), "["); /* XXX: dumb but works */
+	char *module_name = get_tracenode_module(node);
 	struct Module *module = (struct Module *)blob;
 
 	if (module_name) {
-		strstr(module_name, "]")[1] = '\0';
 		module = get_or_new_module(module_name);
 	}
 
@@ -913,14 +958,19 @@ struct Module **collect_modules_sorted() {
 	return modules;
 }
 
+static void module_summary(struct Module *module) {
+	log_info("Module %s using %d pages\n", module->name, module->root.record->pages_alloc);
+	log_info("Top stack usage:\n");
+	print_tracenode(&module->root, 2, 1, 0);
+}
+
 static void print_summary(struct Task *tasks[], int nr_tasks)
 {
 	struct Module **modules;
 
 	modules = collect_modules_sorted();
 	for (int i = 0; i < module_map.size; ++i) {
-		struct Module *module = modules[i];
-		log_info("Module %s using %d pages\n", module->name, module->root.record->pages_alloc);
+		module_summary(modules[i]);
 	}
 }
 
