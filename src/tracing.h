@@ -6,7 +6,7 @@
 #define is_stacktop(tracenode_p) (tracenode_p->children == NULL)
 // TODO: Remove redundant record, and when alloc happened extending a stacktop, remove old record and inherit.
 
-typedef void* addr_t;
+typedef void* trace_addr_t;
 
 extern struct HashMap task_map;
 
@@ -29,7 +29,7 @@ struct Tracenode {
 	struct Tracenode *children;
 
 	union {
-		addr_t addr;
+		trace_addr_t addr;
 		char* symbol;
 
 		void* key;
@@ -75,8 +75,8 @@ void update_record(struct Tracenode *record, struct PageEvent *pe);
 void try_update_record(struct Tracenode *record, struct PageEvent *pe);
 void load_kallsyms();
 void store_symbol_instead(void);
-char* kaddr_to_sym(addr_t addr);
-char* kaddr_to_module(addr_t addr);
+char* kaddr_to_sym(trace_addr_t addr);
+char* kaddr_to_module(trace_addr_t addr);
 char* get_tracenode_symbol(struct Tracenode *node);
 
 void populate_tracenode_shallow(struct Tracenode* tracenode);

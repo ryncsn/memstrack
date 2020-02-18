@@ -73,7 +73,7 @@ HASH_MAP(hash_task, comp_task, task_map);
 struct PageRecord *page_map;
 
 static struct symbol {
-	addr_t addr;
+	trace_addr_t addr;
 	char type;
 	char* module_name;
 	char* sym_name;
@@ -421,7 +421,7 @@ void load_kallsyms() {
 		symbol->symbol.sym_name = strdup(symbol_arg);
 		*sym_buf_tail_p = symbol;
 		sym_buf_tail_p = &symbol->next;
-		symbol->symbol.addr = (addr_t)addr;
+		symbol->symbol.addr = (trace_addr_t)addr;
 
 		symbol_table_len ++;
 	}
@@ -440,7 +440,7 @@ void load_kallsyms() {
 	qsort((void*)symbol_table, symbol_table_len, sizeof(struct symbol), comp_symbol);
 }
 
-static struct symbol* kaddr_to_symbol(addr_t addr) {
+static struct symbol* kaddr_to_symbol(trace_addr_t addr) {
 	int left = 0, right = symbol_table_len, mid;
 
 	do {
@@ -462,7 +462,7 @@ static struct symbol* kaddr_to_symbol(addr_t addr) {
 	return symbol_table + mid;
 }
 
-char* kaddr_to_module(addr_t addr) {
+char* kaddr_to_module(trace_addr_t addr) {
 	static char *buffer;
 
 	struct symbol *sym = kaddr_to_symbol(addr);
@@ -478,7 +478,7 @@ char* kaddr_to_module(addr_t addr) {
 	return buffer;
 };
 
-char* kaddr_to_sym(addr_t addr) {
+char* kaddr_to_sym(trace_addr_t addr) {
 	static char *buffer;
 
 	struct symbol *sym = kaddr_to_symbol(addr);

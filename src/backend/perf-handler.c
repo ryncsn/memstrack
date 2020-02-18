@@ -36,7 +36,7 @@ static struct Tracenode* __process_stacktrace(
 	struct Tracenode *tp = to_tracenode(task);
 
 	for (int i = 1; i < (int)callchain->nr; i++) {
-		addr_t addr = (addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
+		trace_addr_t addr = (trace_addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
 		try_update_record(tp, event);
 
 		if (i == 1) {

@@ -2,29 +2,33 @@
 Name:           {{{ git_dir_name }}}
 Version:        {{{ git_dir_version }}}
 Release:        1%{?dist}
-Summary:        A memory allocation trace, like a hot spot analyzer for memory allocation
+Summary:        A memory allocation tracer, like a hot spot analyzer for memory allocation
 Group:          Applications/System
 License:        GPLv3
 URL:            https://github.com/ryncsn/memstrack
 VCS:            {{{ git_dir_vcs }}}
-BuildRequires:  gcc ncurses-devel
+BuildRequires:  gcc
+BuildRequires:  ncurses-devel
 
 Source:         {{{ git_dir_pack }}}
 
 %description
-A memory allocation trace, like a hot spot analyzer for memory allocation
+A memory allocation tracer, like a hot spot analyzer for memory allocation
 
-%package dracut-memstrack
-Summary: Memory debug hooks with dracut
+%package dracut
+Summary: Debug hook for analyzing memory with memstract in dracut
 Requires: dracut
 BuildArch: noarch
-%description dracut-memstrack
-Memory debug hooks with dracut
+
+%description dracut
+Debug hook for analyzing memory with memstract in dracut, help analyze
+booting stage memory usage.
 
 %prep
 {{{ git_dir_setup_macro }}}
 
 %build
+%{set_build_flags}
 make
 
 %install
@@ -33,7 +37,8 @@ mkdir -p %{buildroot}/%{_bindir}
 install -p -m 755 memstrack %{buildroot}/%{_bindir}
 
 # dracut module part
-%define dracutlibdir %{_libdir}/dracut
+# keep dracutlibdir consistent with the definition in dracut.spec
+%define dracutlibdir %{_prefix}/lib/dracut
 %define dracutmoduledir %{dracutlibdir}/module.d/99memstrack
 mkdir -p %{buildroot}/%{dracutmoduledir}
 
@@ -43,11 +48,13 @@ install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledi
 
 %files
 %{_bindir}/memstrack
-%files dracut-memstrack
+%license LICENSE
+
+%files dracut
+%dir %{dracutmoduledir}
 %{dracutmoduledir}/module-setup.sh
 %{dracutmoduledir}/start-tracing.sh
 %{dracutmoduledir}/stop-tracing.sh
-%doc
 
 %changelog
 {{{ git_dir_changelog }}}
