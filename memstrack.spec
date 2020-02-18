@@ -3,7 +3,6 @@ Name:           {{{ git_dir_name }}}
 Version:        {{{ git_dir_version }}}
 Release:        1%{?dist}
 Summary:        A memory allocation tracer, like a hot spot analyzer for memory allocation
-Group:          Applications/System
 License:        GPLv3
 URL:            https://github.com/ryncsn/memstrack
 VCS:            {{{ git_dir_vcs }}}
@@ -55,6 +54,7 @@ install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledi
 %{dracutmoduledir}/module-setup.sh
 %{dracutmoduledir}/start-tracing.sh
 %{dracutmoduledir}/stop-tracing.sh
+%license LICENSE
 
 %changelog
 {{{ git_dir_changelog }}}
