@@ -16,6 +16,7 @@ A memory allocation tracer, like a hot spot analyzer for memory allocation
 
 %package dracut
 Summary: Debug hook for analyzing memory with memstract in dracut
+Requires: %{name} = %{version}-%{release}
 Requires: dracut
 BuildArch: noarch
 
@@ -28,7 +29,7 @@ booting stage memory usage.
 
 %build
 %{set_build_flags}
-make
+make %{?_smp_mflags}
 
 %install
 # memstrack binary
@@ -46,15 +47,15 @@ install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduled
 install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/stop-tracing.sh
 
 %files
-%{_bindir}/memstrack
+%doc README.md
 %license LICENSE
+%{_bindir}/memstrack
 
 %files dracut
 %dir %{dracutmoduledir}
 %{dracutmoduledir}/module-setup.sh
 %{dracutmoduledir}/start-tracing.sh
 %{dracutmoduledir}/stop-tracing.sh
-%license LICENSE
 
 %changelog
 {{{ git_dir_changelog }}}
