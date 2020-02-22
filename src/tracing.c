@@ -203,6 +203,11 @@ static void free_tracenode(struct Tracenode* tracenode) {
  * Should only be called against top of the stack
  */
 static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigned long nr_pages) {
+	if (pfn > max_pfn) {
+		log_error ("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn, max_pfn);
+		return;
+	}
+
 	struct Record *record;
 	page_alloc_counter += nr_pages;
 
@@ -230,10 +235,9 @@ static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigne
 static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	struct Tracenode *tracenode, *last = NULL;
 
-	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
 	if (pfn > max_pfn) {
-		pfn = pfn / 4;
-		pfn = pfn % max_pfn;
+		log_error ("BUG: free pfn %lu out of max_pfn %lu\n", pfn, max_pfn);
+		return;
 	}
 
 	while (nr_pages--) {

@@ -249,7 +249,7 @@ void tui_update(void) {
 		switch (ch) {
 			case 'q':
 				endwin();
-				m_exit();
+				m_exit(0);
 				return;
 
 			case 'r':

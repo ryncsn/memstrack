@@ -24,4 +24,4 @@ extern int m_log (int level, const char *__restrict __fmt, ...);
 #define log_warn(...) m_log(LOG_LVL_WARN, __VA_ARGS__)
 #define log_error(...) m_log(LOG_LVL_ERROR, __VA_ARGS__)
 
-extern void m_exit (void);
+extern void m_exit (int val);

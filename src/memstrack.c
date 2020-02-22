@@ -12,8 +12,8 @@
 #include <sys/timerfd.h>
 #include <sys/resource.h>
 
-#include "backend/perf-handler.h"
-#include "backend/ftrace-handler.h"
+#include "backend/perf.h"
+#include "backend/ftrace.h"
 #include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
@@ -74,16 +74,16 @@ static void do_exit() {
 	if (m_output != stdout) {
 		fclose(m_output);
 	}
-	exit(0);
 }
 
-void m_exit(void) {
-	m_loop = 0;
+void m_exit(int ret) {
+	do_exit();
+	exit(ret);
 }
 
 static void on_signal(int signal) {
 	log_debug("Exiting on signal %d\n", signal);
-	m_exit();
+	m_exit(0);
 }
 
 static struct option long_options[] =
@@ -161,7 +161,7 @@ static void init_fds(void) {
 	if (m_perf) {
 		ret = perf_handling_init();
 		if (ret) {
-			log_error("Failed initializing perf event buffer: %s!", strerror(ret));
+			log_error("Failed initializing perf events\n");
 			exit(ret);
 		}
 
@@ -322,4 +322,6 @@ int main(int argc, char **argv) {
 	}
 
 	do_exit();
+
+	return 0;
 }

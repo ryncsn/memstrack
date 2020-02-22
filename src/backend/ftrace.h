@@ -1,8 +1,8 @@
-#include <stdio.h>
+#include <poll.h>
 
-extern char FTRACE_STACK_TRACE_SIGN[];
-extern char FTRACE_STACK_TRACE_EVENT[];
+int ftrace_handling_init();
+int ftrace_handling_clean();
+int ftrace_handling_process();
 
-extern int ftrace_read_next_valid_line(char *buffer, int size, FILE *trace_file);
-extern int ftrace_cleanup(FILE **file);
-extern int ftrace_setup(FILE **file, const char* events);
+static inline int ftrace_count_fds(void) { return 1; /* Only one ftrace reader */ }
+int ftrace_apply_fds(struct pollfd *fds);
