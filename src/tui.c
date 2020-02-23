@@ -67,6 +67,7 @@ static int print_tracenode(struct Tracenode *node, int indent) {
 
 	if (!node->record->blob)
 		node->record->blob = calloc(1, sizeof(struct TracenodeView));
+
 	view = node->record->blob;
 
 	if (view->expended)

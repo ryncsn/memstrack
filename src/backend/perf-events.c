@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <malloc.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
@@ -18,6 +19,8 @@
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
+
+// TODO: Remove common fields to save buffer ?
 
 DefineEvent(
 	kmem, mm_page_alloc,
@@ -39,35 +42,56 @@ DefineEvent(
 DefineEvent(
 	module, module_load,
 	IncludeCommonEventFields(),
-	EventField(int, taints),
-	EventField(__data_loc char, name, 4, 1));
+	// EventField(int, taints),
+	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
 	syscalls, sys_enter_init_module,
-	IncludeCommonEventFields(),
-	EventField(int, __syscall_nr),
-	EventField(struct page *, page));
+	IncludeCommonEventFields());
+	// EventField(int, __syscall_nr);
 
-static struct Tracenode* __process_stacktrace(
+DefineEvent(
+	syscalls, sys_exit_init_module,
+	IncludeCommonEventFields());
+	// EventField(int, __syscall_nr);
+
+static struct Tracenode* __process_stacktrace_mod(
 		struct perf_sample_callchain *callchain,
-		struct Task *task, struct PageEvent *event)
+		struct Task *task, struct PageEvent *event, char *mod)
 {
-	struct Tracenode *tp = to_tracenode(task);
+	struct Module *module = get_or_new_module(mod);
+	struct Tracenode *tp = to_tracenode(module);
 
 	for (int i = 1; i < (int)callchain->nr; i++) {
 		trace_addr_t addr = (trace_addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
 		try_update_record(tp, event);
-
-		if (i == 1) {
-			tp = get_or_new_child_tracenode(to_tracenode(task), addr);
-		} else {
-			tp = get_or_new_child_tracenode(tp, addr);
-		}
+		tp = get_or_new_child_tracenode(tp, addr);
 	}
 
 	update_record(tp, event);
 	return tp;
 }
+
+static struct Tracenode* __process_stacktrace(
+		struct perf_sample_callchain *callchain,
+		struct Task *task, struct PageEvent *event)
+{
+	if (task->module_loading) {
+		return __process_stacktrace_mod(callchain, task, event, task->module_loading);
+	}
+
+	struct Tracenode *tp = to_tracenode(task);
+
+	for (int i = 1; i < (int)callchain->nr; i++) {
+		trace_addr_t addr = (trace_addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
+		try_update_record(tp, event);
+		tp = get_or_new_child_tracenode(tp, addr);
+	}
+
+	update_record(tp, event);
+	return tp;
+}
+
 
 static void __process_common(struct PerfEventRing *ring, const unsigned char* header,
 		struct perf_sample_basic **body, struct perf_sample_callchain **callchain,
@@ -110,6 +134,7 @@ static int perf_handle_mm_page_alloc(struct PerfEventRing *ring, const unsigned 
 		}
 
 		task = get_or_new_task(&task_map, NULL, body->pid);
+
 		__process_stacktrace(callchain, task, &event);
 	}
 
@@ -141,11 +166,59 @@ static int perf_handle_mm_page_free(struct PerfEventRing *ring, const unsigned c
 	return 0;
 }
 
+static int perf_handle_module_load(struct PerfEventRing *ring, const unsigned char* header) {
+	struct Task *task;
+	struct perf_sample_basic *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+
+	__process_common(ring, header, &body, &callchain, &raw);
+
+	struct data_loc_fixed {
+		uint16_t offset;
+		uint16_t size;
+	} value = read_data_from_perf_raw(module_load, name, struct data_loc_fixed, raw);
+
+	char *name = (char*)get_data_p_from_raw(raw) + value.offset;
+
+	task = get_or_new_task(&task_map, NULL, body->pid);
+	task->module_loading = strdup(name);
+	log_error("Module loading %s\n", name);
+
+	// TODO: On event load, remove all module_loading
+
+	return 0;
+}
+
+static int perf_handle_sys_exit_init_module(struct PerfEventRing *ring, const unsigned char* header) {
+	struct Task *task;
+	struct perf_sample_basic *body;
+	struct perf_sample_callchain *callchain;
+	struct perf_sample_raw *raw;
+
+	__process_common(ring, header, &body, &callchain, &raw);
+
+	log_debug("Module loading exit\n");
+	task = get_or_new_task(&task_map, NULL, body->pid);
+	if (!task->module_loading) {
+		log_debug("Ignoring sys_exit_init_module of task %ld\n", task->pid);
+	} else {
+		free(task->module_loading);
+		task->module_loading = NULL;
+	}
+
+	return 0;
+}
+
+
 static int always_enable(void) { return 1; }
 
 const struct perf_event_table_entry perf_event_table[] = {
-	{ &get_perf_event(mm_page_alloc),	perf_handle_mm_page_alloc,	always_enable },
-	{ &get_perf_event(mm_page_free),	perf_handle_mm_page_free,	always_enable },
+	{ &get_perf_event(mm_page_alloc),		perf_handle_mm_page_alloc,	always_enable },
+	{ &get_perf_event(mm_page_free),		perf_handle_mm_page_free,	always_enable },
+	{ &get_perf_event(module_load),			perf_handle_module_load,	always_enable },
+//	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,	always_enable },
+	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
 };
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);

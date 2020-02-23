@@ -45,7 +45,17 @@ struct Task {
 	// TODO: Distinguish exited task, loop pid
 	long pid;
 	char *task_name;
+	char *module_loading;
 };
+
+struct Module {
+	struct HashNode node;
+	struct Tracenode tracenode;
+
+	char *name;
+	unsigned int pages;
+};
+
 
 struct PageRecord {
 	struct Tracenode *tracenode;
@@ -89,6 +99,7 @@ struct Task* get_task(struct HashMap *map, char* task_name, int pid);
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
 struct Task **collect_tasks_sorted(struct HashMap *map, int shallow);
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
+struct Module *get_or_new_module(char *name);
 
 void final_report(struct HashMap *map, int task_limit);
 int for_each_tracenode_ret(struct Tracenode* root, int (*op)(struct Tracenode *node, void *blob), void *blob);

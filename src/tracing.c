@@ -842,13 +842,6 @@ static void print_details(struct Task *tasks[], int nr_tasks, long nr_pages_limi
  */
 int module_count;
 
-struct Module {
-	struct HashNode node;
-	char *name;
-	unsigned int pages;
-	struct Tracenode root;
-};
-
 static unsigned int comp_module(const struct HashNode *hnode, const void *key) {
 	struct Module *mod = container_of(hnode, struct Module, node);
 	return strcmp(mod->name, key);
@@ -867,7 +860,7 @@ static unsigned int hash_module(const void *key) {
 
 HASH_MAP(hash_module, comp_module, module_map);
 
-static struct Module *get_or_new_module(char *name)
+struct Module *get_or_new_module(char *name)
 {
 	struct Module *module;
 	struct HashNode *hnode;
@@ -875,7 +868,7 @@ static struct Module *get_or_new_module(char *name)
 	if (!hnode) {
 		module = calloc(1, sizeof(struct Module));
 		module->name = strdup(name);
-		module->root.record = calloc(1, sizeof(struct Record));
+		module->tracenode.record = calloc(1, sizeof(struct Record));
 		insert_hash_node(&module_map, &module->node, name);
 	} else {
 		module = container_of(hnode, struct Module, node);
@@ -889,7 +882,7 @@ static struct Tracenode *merge_into_module(struct Tracenode *node, struct Module
 	if (node->parent) {
 		pnode = merge_into_module(node->parent, module);
 	} else {
-		pnode = &module->root;
+		pnode = &module->tracenode;
 	}
 
 	pnode = get_or_new_child_tracenode(pnode, node->key);
@@ -928,8 +921,8 @@ static int comp_module_mem(const void *x, const void *y) {
 	struct Module *x_t = *(struct Module**)x;
 	struct Module *y_t = *(struct Module**)y;
 
-	x_mem = x_t->root.record->pages_alloc * page_size;
-	y_mem = y_t->root.record->pages_alloc * page_size;
+	x_mem = x_t->tracenode.record->pages_alloc * page_size;
+	y_mem = y_t->tracenode.record->pages_alloc * page_size;
 
 	if (x_mem == y_mem) {
 		return 0;
@@ -953,7 +946,7 @@ struct Module **collect_modules_sorted() {
 	modules = malloc(module_map.size * sizeof(struct Module*));
 	for_each_hnode(&module_map, hnode) {
 		modules[i] = container_of(hnode, struct Module, node);
-		populate_tracenode(&modules[i]->root);
+		populate_tracenode(&modules[i]->tracenode);
 		i++;
 	}
 
@@ -963,9 +956,9 @@ struct Module **collect_modules_sorted() {
 }
 
 static void module_summary(struct Module *module) {
-	log_info("Module %s using %d pages\n", module->name, module->root.record->pages_alloc);
+	log_info("Module %s using %d pages\n", module->name, module->tracenode.record->pages_alloc);
 	log_info("Top stack usage:\n");
-	print_tracenode(&module->root, 2, 1, 0);
+	print_tracenode(&module->tracenode, 2, 1, 0);
 }
 
 static void print_summary(struct Task *tasks[], int nr_tasks)
