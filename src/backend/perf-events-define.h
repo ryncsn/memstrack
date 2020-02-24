@@ -1,7 +1,7 @@
 #include <linux/perf_event.h>
 #include <stdint.h>
 
-#define CPU_BUFSIZE 64
+#define CPU_BUFSIZE 256
 #define MAX_EVENT_SEG 64
 
 #define GETN(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
