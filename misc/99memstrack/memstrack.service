@@ -10,4 +10,4 @@ RemainAfterExit=yes
 StandardInput=null
 StandardOutput=syslog+console
 StandardError=syslog+console
-ExecStop=/bin/memstrack-start
+ExecStart=/bin/memstrack-start

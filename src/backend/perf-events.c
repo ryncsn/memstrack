@@ -183,6 +183,7 @@ static int perf_handle_module_load(struct PerfEventRing *ring, const unsigned ch
 
 	task = get_or_new_task(&task_map, NULL, body->pid);
 	task->module_loading = strdup(name);
+	// TODO: Better informing
 	log_error("Module loading %s\n", name);
 
 	// TODO: On event load, remove all module_loading
