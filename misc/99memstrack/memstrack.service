@@ -1,0 +1,13 @@
+[Unit]
+Description=Memstrack Anylazing Service
+DefaultDependencies=no
+Before=dracut-cmdline.service systemd-udevd.service local-fs-pre.target swap.target
+IgnoreOnIsolate=true
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+StandardInput=null
+StandardOutput=syslog+console
+StandardError=syslog+console
+ExecStop=/bin/memstrack-start

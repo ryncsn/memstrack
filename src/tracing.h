@@ -105,6 +105,14 @@ void final_report(struct HashMap *map, int task_limit);
 int for_each_tracenode_ret(struct Tracenode* root, int (*op)(struct Tracenode *node, void *blob), void *blob);
 void for_each_tracenode(struct Tracenode* root, void (*op)(struct Tracenode *node, void *blob), void *blob);
 
+struct reporter_table_t {
+	char *name;
+	void (*report)(void);
+};
+
+extern struct reporter_table_t reporter_table[];
+extern int report_table_size;
+
 #define _MEMORY_TRACER_TRACING_LIB 1
 
 #endif /* ifndef _MEMORY_TRACER_TRACING_LIB */

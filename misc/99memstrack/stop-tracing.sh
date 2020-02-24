@@ -11,3 +11,5 @@ kill -s INT $(get_pid_of_tracer)
 while [[ -n $(get_pid_of_tracer) ]]; do
     sleep 1
 done
+
+cat /memory-debug

@@ -10,7 +10,9 @@ extern int m_throttle;
 extern int m_summary;
 extern int m_sort_alloc;
 extern int m_sort_peak;
+
 extern unsigned int page_size;
+extern char* m_report;
 
 #define LOG_LVL_DEBUG 0
 #define LOG_LVL_INFO 1

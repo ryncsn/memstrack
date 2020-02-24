@@ -1,5 +1,7 @@
 #!/bin/bash
 
+type getargnum >/dev/null 2>&1 || . /lib/dracut-lib.sh
+
 # Currently need mount debugfs to get event id
 get_trace_base() {
         if [ -d "/sys/kernel/tracing" ]; then
@@ -23,6 +25,17 @@ if ! [ -f "$trace_base/tracing/trace" ]; then
         return 1
 fi
 
-memstrack --page --summary --throttle 80 --sort-by peak > /memory-debug & disown
+memstrack_cmdline=$(getargnum 0 0 2 rd.memstrack)
 
-sleep 5
+if [ $memstrack_cmdline -gt 1 ]; then
+        memstrack --throttle 60 -o /memory-debug & disown
+        unset $memstrack_cmdline
+fi
+
+if [ $memstrack_cmdline -gt 0 ]; then
+        memstrack --summary -o /memory-debug & disown
+        unset $memstrack_cmdline
+fi
+
+# Wait a second for memstrack to setup everything, avoid missing any event
+sleep 1

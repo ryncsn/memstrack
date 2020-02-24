@@ -31,6 +31,7 @@ int m_sort_alloc = 1;
 int m_sort_peak = 0;
 int m_notui;
 
+char* m_report;
 char* m_output_path;
 FILE* m_output;
 
@@ -94,6 +95,7 @@ static struct option long_options[] =
 	{"summary",		no_argument,		&m_summary,	1},
 	{"show-misc",		no_argument,		&m_show_misc,	1},
 	{"debug",		no_argument,		0,		'd'},
+	{"report",		required_argument,	0,		'r'},
 	{"output",		required_argument,	0,		'o'},
 	{"backend",		required_argument,	0,		'b'},
 	{"throttle",		required_argument,	0,		't'},
@@ -120,7 +122,14 @@ static void display_usage() {
 	log_info("    			How should the stack be sorted on start, by the peak usage or final usage.\n");
 	log_info("    			Defaults to 'peak'.\n");
 	log_info("    --json		Format report result as json.\n");
-	log_info("    --summary 	Generate a summary report instead of detailed stack info.\n");
+	log_info("    --report		Generate a summary report instead of detailed stack info.\n");
+	log_info("    			available report types: [");
+
+	for (int i = 0; i < report_table_size; ++i) {
+		log_info("%s ", reporter_table[i].name);
+	}
+
+	log_info("]\n");
 	log_info("    --show-misc	Generate a current memory usage summary report on start.\n");
 	log_info("    --debug		Print more debug messages.\n");
 	log_info("    --help 		Print this help message.\n");
@@ -225,8 +234,9 @@ int main(int argc, char **argv) {
 	while (1) {
 		int opt;
 		int option_index = 0;
+		char *report_type;
 
-		opt = getopt_long(argc, argv, "dhp:o:t:b:s:h", long_options, &option_index);
+		opt = getopt_long(argc, argv, "dhr:p:o:t:b:s:h", long_options, &option_index);
 
 		/* Detect the end of the options. */
 		if (opt == -1)
@@ -246,6 +256,29 @@ int main(int argc, char **argv) {
 			case 'p':
 				m_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
 				strcpy(m_perf_base, optarg);
+				break;
+			case 'r':
+				m_report = strdup(optarg);
+				report_type = strtok(m_report, ",");
+				do {
+					for (int i = 0;; ++i) {
+						if (i == report_table_size) {
+							log_error("Invalid report type: %s\n", report_type);
+							m_exit(1);
+						}
+
+						if (!strcmp(reporter_table[i].name, report_type)) {
+							reporter_table[i].report();
+							break;
+						}
+					}
+					report_type = strtok(NULL, ",");
+				} while (report_type);
+
+				/* Re-copy it, strtok will corrupt current one */
+				free(m_report);
+				m_report = strdup(optarg);
+
 				break;
 			case 'o':
 				if (m_output_path) {
