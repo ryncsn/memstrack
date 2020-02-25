@@ -20,13 +20,9 @@
 #include "tui.h"
 
 int m_debug;
-int m_human;
 int m_perf = 1;
-int m_ftrace;
-int m_json;
-int m_show_misc;
+int m_ftrace = 0;
 int m_throttle = 100;
-int m_summary;
 int m_sort_alloc = 1;
 int m_sort_peak = 0;
 int m_notui;
@@ -91,15 +87,11 @@ static struct option long_options[] =
 {
 	/* These options set a flag. */
 	{"notui",		no_argument,		&m_notui,	1},
-	{"json",		no_argument,		&m_json,	1},
-	{"summary",		no_argument,		&m_summary,	1},
-	{"show-misc",		no_argument,		&m_show_misc,	1},
-	{"debug",		no_argument,		0,		'd'},
-	{"report",		required_argument,	0,		'r'},
+	{"debug",		no_argument,		&m_debug,	1},
 	{"output",		required_argument,	0,		'o'},
 	{"backend",		required_argument,	0,		'b'},
 	{"throttle",		required_argument,	0,		't'},
-	{"sort-by",		required_argument,	0,		's'},
+	{"report",		required_argument,	0,		'r'},
 	{"help",		no_argument,		0,		'?'},
 	// {"human-readable",	no_argument,		0,		NULL},
 	// {"trace-base",	required_argument,	0,		NULL},
@@ -110,29 +102,27 @@ static struct option long_options[] =
 static void display_usage() {
 	log_info("Usage: memstrack [OPTION]... \n");
 	log_info("    --notui		Only generate report.\n");
-	log_info("    --output <file>	Generate trace report to given file instead of stdout.\n");
+	log_info("    --output <file>\n");
+	log_info("    			Generate trace report to given file instead of stdout.\n");
 	log_info("    --backend {perf|ftrace}\n");
 	log_info("    			Choose a backend for memory allocation tracing. Defaults to perf.\n");
 	log_info("    			ftrace: poor performance but should always work.\n");
 	log_info("    			perf: binary perf, may require CONFIG_FRAME_POINTER enabled for Kernel version <= 5.1.\n");
 	log_info("    --throttle [PERCENTAGE]\n");
 	log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed.\n");
-	log_info("    			expects a number between 0 to 100. Useful to filter minor noises.\n");
-	log_info("    --sort-by {peak|alloc} \n");
-	log_info("    			How should the stack be sorted on start, by the peak usage or final usage.\n");
-	log_info("    			Defaults to 'peak'.\n");
-	log_info("    --json		Format report result as json.\n");
-	log_info("    --report		Generate a summary report instead of detailed stack info.\n");
-	log_info("    			available report types: [");
+	log_info("    			expects a number between 0 to 100. Useful to filter minor allocations.\n");
+	log_info("    --report {<type>,...}\n");
+	log_info("    			Choose final report type, if multiple types are given, they are printed in given order.\n");
+	log_info("    			Available report types: [ ");
 
 	for (int i = 0; i < report_table_size; ++i) {
-		log_info("%s ", reporter_table[i].name);
+		log_info("\"%s\" ", reporter_table[i].name);
 	}
 
 	log_info("]\n");
-	log_info("    --show-misc	Generate a current memory usage summary report on start.\n");
 	log_info("    --debug		Print more debug messages.\n");
 	log_info("    --help 		Print this help message.\n");
+	// log_info("    --throttle-peak	\n");
 	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M\n");
 	// log_info("    --trace-base [DIR]	Use a different tracing mount path for ftrace.\n");
 }
@@ -236,7 +226,7 @@ int main(int argc, char **argv) {
 		int option_index = 0;
 		char *report_type;
 
-		opt = getopt_long(argc, argv, "dhr:p:o:t:b:s:h", long_options, &option_index);
+		opt = getopt_long(argc, argv, "dho:b:t:r:?", long_options, &option_index);
 
 		/* Detect the end of the options. */
 		if (opt == -1)
@@ -246,12 +236,6 @@ int main(int argc, char **argv) {
 		{
 			case 0:
 				// Flag setted, nothing to do
-				break;
-			case 'd':
-				m_debug = 1;
-				break;
-			case 'h':
-				m_human = 1;
 				break;
 			case 'p':
 				m_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
@@ -337,10 +321,6 @@ int main(int argc, char **argv) {
 	page_size = getpagesize();
 
 	mem_tracing_init();
-
-	if (m_show_misc) {
-		print_slab_usage();
-	}
 
 	signal(SIGINT, on_signal);
 
