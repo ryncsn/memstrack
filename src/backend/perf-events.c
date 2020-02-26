@@ -23,7 +23,7 @@
 // TODO: Remove common fields to save buffer ?
 
 DefineEvent(
-	kmem, mm_page_alloc,
+	kmem, mm_page_alloc, 256,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn),
@@ -33,25 +33,25 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free,
+	kmem, mm_page_free, 256,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn)
 );
 
 DefineEvent(
-	module, module_load,
+	module, module_load, 16,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
-	syscalls, sys_enter_init_module,
+	syscalls, sys_enter_init_module, 16,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_init_module,
+	syscalls, sys_exit_init_module, 16,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
@@ -237,9 +237,14 @@ int perf_load_events(void)
 	return 0;
 }
 
+static int align_buffer(int buf_size) {
+	/* Align to page, and one extra page for buffer */
+	return ((buf_size / page_size) + 1) * page_size;
+}
+
 int perf_ring_setup(struct PerfEventRing *ring) {
 	struct perf_event_attr attr;
-	int perf_fd = 0, mmap_size = 0;
+	int perf_fd = 0, buf_size;
 
 	memset(&attr, 0, sizeof(struct perf_event_attr));
 	attr.size = sizeof(struct perf_event_attr);
@@ -253,10 +258,11 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.exclude_callchain_kernel = 0;
 	attr.config = ring->event->id;
 
-	mmap_size = (CPU_BUFSIZE + 1) * page_size;
+	buf_size = align_buffer(ring->event->buf_size);
 
-	attr.wakeup_watermark = mmap_size / 4;
-	if (attr.wakeup_watermark < (__u32)page_size) {
+	/* Try wake up when there are 4KB of event to process */
+	attr.wakeup_watermark = 4096;
+	if (buf_size < (int)attr.wakeup_watermark) {
 		log_error("perf ring buffer too small!\n");
 	}
 	attr.watermark = 1;
@@ -272,17 +278,17 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 
 	// Extra one page for metadata
 	void *perf_mmap = mmap(NULL,
-			mmap_size ,
+			buf_size,
 			PROT_READ | PROT_WRITE, MAP_SHARED, perf_fd, 0);
 
 	if (perf_mmap == MAP_FAILED) {
-		log_error("Failed mmaping perf ring buffer: %s\n", strerror(errno));
+		log_error("Failed mmaping perf ring buffer: %s, %d\n", strerror(errno), buf_size);
 		return errno;
 	}
 
 	ring->fd = perf_fd;
-	ring->mmap_size = mmap_size;
-	ring->data_size = mmap_size - page_size;
+	ring->mmap_size = buf_size;
+	ring->data_size = buf_size - page_size;
 	ring->meta = (struct perf_event_mmap_page *)perf_mmap;
 	ring->data = (unsigned char *)perf_mmap + page_size;
 	ring->index = 0;
@@ -319,7 +325,7 @@ static int perf_handle_sample(struct PerfEventRing *ring, const unsigned char* h
 	log_debug("Event: %s", ring->event->name);
 
 	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_TID & PERF_SAMPLE_CPU) {
-		log_debug(" on PID %d, TID %d, CPU %d, RES %d\n", ring->event->name, body->pid, body->tid, body->cpu, body->res);
+		log_debug(" on PID %d, TID %d, CPU %d\n", ring->event->name, body->pid, body->tid, ring->cpu);
 	} else {
 		log_debug("\n");
 	}
@@ -349,9 +355,9 @@ static int perf_handle_sample(struct PerfEventRing *ring, const unsigned char* h
 	return 0;
 }
 
-static int perf_handle_lost_event(const unsigned char* header) {
+static int perf_handle_lost_event(const unsigned char* header, int cpu) {
 	struct perf_lost_events *body = (struct perf_lost_events*)header;
-	log_warn("Lost %d events on CPU %d!\n", body->lost, body->sample_id.cpu);
+	log_warn("Lost %d events on CPU %d!", body->lost, cpu);
 	return 0;
 }
 
@@ -377,7 +383,7 @@ int perf_ring_process(struct PerfEventRing *perf_event) {
 					}
 					break;
 				case PERF_RECORD_LOST:
-					perf_handle_lost_event(data);
+					perf_handle_lost_event(data, perf_event->cpu);
 					break;
 					// case PERF_RECORD_MMAP:
 					// case PERF_RECORD_FORK:
@@ -407,7 +413,7 @@ int perf_ring_clean(struct PerfEventRing *perf_event) {
 		log_error("Failed to stop perf sampling!\n");
 	}
 
-	ret = munmap(perf_event->mmap, CPU_BUFSIZE);
+	ret = munmap(perf_event->mmap, align_buffer(perf_event->event->buf_size));
 	if (ret) {
 		log_error("Failed to unmap perf ring buffer!\n");
 	} else {

@@ -1,9 +1,6 @@
 #include <linux/perf_event.h>
 #include <stdint.h>
 
-#define CPU_BUFSIZE 256
-#define MAX_EVENT_SEG 64
-
 #define GETN(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, N, ...) N
 #define NUMFIELDS(...) GETN(__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
@@ -35,9 +32,9 @@
 #define _DoDefineTable(name, ...)\
 	struct PerfEventField name##_info;
 
-#define DefineEvent(event_class, name, ...)\
+#define DefineEvent(event_class, name, buf_size, ...)\
 	struct PerfEvent perf_event_##name = {\
-		#event_class, #name, 0, NUMFIELDS( __VA_ARGS__ ), { FORAPPLY( _DoDefineField, __VA_ARGS__) }\
+		#event_class, #name, 0, (buf_size * 1024), NUMFIELDS( __VA_ARGS__ ), { FORAPPLY( _DoDefineField, __VA_ARGS__) }\
 	};\
 	struct __perf_event_field_table_##name {\
 		FORAPPLY( _DoDefineTable, __VA_ARGS__)\
@@ -91,7 +88,6 @@ struct read_format_group_data {
  */
 
 #define SAMPLE_CONFIG_FLAG ( \
-	PERF_SAMPLE_CPU | \
 	PERF_SAMPLE_RAW | \
 	PERF_SAMPLE_TID | \
 	PERF_SAMPLE_CALLCHAIN \
@@ -103,8 +99,8 @@ struct perf_sample_id {
 //	u64 time;			/* if PERF_SAMPLE_TIME set */
 //	u64 id;				/* if PERF_SAMPLE_ID set */
 //	u64 stream_id;			/* if PERF_SAMPLE_STREAM_ID set	*/
-	uint32_t cpu;			/* if PERF_SAMPLE_CPU set */
-	uint32_t res;			/* if PERF_SAMPLE_CPU set */
+//	uint32_t cpu;			/* if PERF_SAMPLE_CPU set */
+//	uint32_t res;			/* if PERF_SAMPLE_CPU set */
 //	u64 id;				/* if PERF_SAMPLE_IDENTIFIER set */
 };
 
@@ -124,7 +120,7 @@ struct perf_sample_basic {
 //	uint64_t addr;			/* if PERF_SAMPLE_ADDR */
 //	uint64_t id;			/* if PERF_SAMPLE_ID */
 //	uint64_t stream_id;		/* if PERF_SAMPLE_STREAM_ID */
-	uint32_t cpu, res;		/* if PERF_SAMPLE_CPU */
+//	uint32_t cpu, res;		/* if PERF_SAMPLE_CPU */
 //	uint64_t period;		/* if PERF_SAMPLE_PERIOD */
 //	struct read_format v;		/* if PERF_SAMPLE_READ */
 };

@@ -186,12 +186,16 @@ static void init_fds(void) {
 	}
 
 	if (m_perf) {
-		perf_apply_fds(m_pollfds + extra_fd_num);
-		perf_handling_start();
+		perf_apply_fds(m_pollfds);
 	} else if (m_ftrace) {
 		ftrace_apply_fds(m_pollfds + extra_fd_num);
 	}
-	tui_apply_fds(m_pollfds);
+
+	if (!m_notui)
+		tui_apply_fds(m_pollfds);
+
+	if (m_perf)
+		perf_handling_start();
 }
 
 static void loop(void) {

@@ -15,6 +15,7 @@ struct PerfEvent {
 	char *name;
 	int id;
 
+	unsigned int buf_size;
 	short fileds_num;
 
 	struct PerfEventField fields[];
