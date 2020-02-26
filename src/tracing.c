@@ -961,7 +961,12 @@ static void report_module_summary(void) {
 	modules = collect_modules_sorted();
 
 	for (int i = 0; i < module_map.size; ++i) {
-		log_info("Module %s using %d pages\n", modules[i]->name, modules[i]->tracenode.record->pages_alloc);
+		log_info(
+				"Module %s using %d pages, peak allocation %d pages\n",
+				modules[i]->name,
+				modules[i]->tracenode.record->pages_alloc,
+				modules[i]->tracenode.record->pages_alloc_peak
+			);
 	}
 
 	free(modules);
@@ -987,9 +992,12 @@ static void report_task_summary (void) {
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
 	tasks = collect_tasks_sorted(&task_map, 0);
-
-	for (int i = 0; i < module_map.size; ++i) {
-		log_info("Task %s (%u) using %d pages\n", tasks[i]->task_name, tasks[i]->pid, tasks[i]->tracenode.record->pages_alloc);
+	for (int i = 0; i < task_map.size; ++i) {
+		log_info(
+				"Task %s (%u) using %u pages, peak usage %u pages\n",
+				tasks[i]->task_name, tasks[i]->pid,
+				tasks[i]->tracenode.record->pages_alloc,
+				tasks[i]->tracenode.record->pages_alloc_peak);
 	}
 
 	free(tasks);

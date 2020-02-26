@@ -85,7 +85,11 @@ struct read_format_group_data {
 	uint64_t id;			/* if PERF_FORMAT_ID */
 };
 
-/* Remember to adjust structures blow if changed this config flag */
+/*
+ * IMPORTANT:
+ * Remember to adjust structures blow if changed this config flag
+ */
+
 #define SAMPLE_CONFIG_FLAG ( \
 	PERF_SAMPLE_CPU | \
 	PERF_SAMPLE_RAW | \

@@ -67,7 +67,9 @@ static void do_exit() {
 	if (m_perf) {
 		perf_handling_clean();
 	}
-	final_report(&task_map, 0);
+	if (m_report) {
+		final_report(&task_map, 0);
+	}
 	if (m_output != stdout) {
 		fclose(m_output);
 	}
