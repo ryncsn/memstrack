@@ -10,6 +10,7 @@ include src/backend/Makefile
 	$(CC) -c $(CFLAGS) $(LDFLAGS) -o $@ $(<:.d=.c)
 
 LIB_SRCS = $(BACKEND_SRCS) \
+	   src/report.c \
 	   src/tracing.c \
 	   src/utils.c \
 	   src/tui.c \

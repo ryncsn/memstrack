@@ -36,7 +36,7 @@ static void update_top_tasks() {
 		free(sorted_tasks);
 
 	// TODO: No need to free / alloc every time
-	sorted_tasks = collect_tasks_sorted(&task_map, 1);
+	sorted_tasks = collect_tasks_sorted(1);
 	tasks_num = task_map.size;
 
 	for (int i = 0; i < tasks_num; ++i) {
@@ -58,7 +58,7 @@ struct line_info {
 	char buffer[1024];
 } *info;
 
-static int print_tracenode(struct Tracenode *node, int indent) {
+static int tui_print_tracenode(struct Tracenode *node, int indent) {
 	struct Tracenode** nodes;
 	struct TracenodeView *view;
 
@@ -98,7 +98,7 @@ static int print_tracenode(struct Tracenode *node, int indent) {
 	if (view->expended && node->children) {
 		nodes = collect_tracenodes_sorted(node->children, &count, 1);
 		for (int i = 0; i < count; ++i) {
-			ret = print_tracenode(nodes[i], indent + 1);
+			ret = tui_print_tracenode(nodes[i], indent + 1);
 			if (ret)
 				break;
 		}
@@ -117,7 +117,7 @@ static void trace_refresh_tui() {
 	info = &line_info;
 
 	for (int task_n = 0; task_n < tasks_num; ++task_n) {
-		print_tracenode(to_tracenode(sorted_tasks[task_n]), 0);
+		tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0);
 	}
 }
 

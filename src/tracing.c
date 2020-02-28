@@ -678,13 +678,13 @@ static int comp_task_mem(const void *x, const void *y) {
 	}
 }
 
-struct Task **collect_tasks_sorted(struct HashMap *map, int shallow) {
+struct Task **collect_tasks_sorted(int shallow) {
 	struct HashNode *hnode = NULL;
 	struct Task **tasks;
 	int i = 0;
 
 	tasks = malloc(task_map.size * sizeof(struct Task*));
-	for_each_hnode(map, hnode) {
+	for_each_hnode(&task_map, hnode) {
 		tasks[i] = container_of(hnode, struct Task, node);
 
 		if (shallow)
@@ -700,7 +700,7 @@ struct Task **collect_tasks_sorted(struct HashMap *map, int shallow) {
 	return tasks;
 }
 
-static void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
+void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	struct json_marker *current = (struct json_marker*)blob;
 	struct json_marker next = {current->indent + 2, 0};
 	struct Tracenode **nodes;
@@ -716,7 +716,7 @@ static void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	log_info("%s\"%s\": ", padding, get_tracenode_symbol(tracenode));
 	log_info("{\n");
 	log_info("%s \"pages_alloc\": %d", padding, tracenode->record->pages_alloc);
-	log_info(",%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
+	log_info(",\n%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
 	if (tracenode->children) {
 		log_info(",\n%s \"tracenodes\": {\n", padding);
 		nodes = collect_tracenodes_sorted(tracenode->children, &counter, 1);
@@ -732,7 +732,7 @@ static void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	current->count++;
 }
 
-static void print_task_json(struct Task* task, int last_task) {
+void print_task_json(struct Task* task) {
 	struct json_marker marker = {2, 0};
 	struct Tracenode **nodes;
 	int counter;
@@ -751,15 +751,10 @@ static void print_task_json(struct Task* task, int last_task) {
 		free(nodes);
 	}
 	log_info("\n  }\n");
-
-	if (last_task) {
-		log_info(" }\n");
-	} else {
-		log_info(" },\n");
-	}
+	log_info(" }");
 }
 
-static void print_tracenode(struct Tracenode* tracenode, int current_indent, int substack_limit, int throttle) {
+void print_tracenode(struct Tracenode* tracenode, int current_indent, int substack_limit, int throttle) {
 	int next_indent = current_indent + 2, counter, padding = current_indent;
 	long page_limit;
 
@@ -797,7 +792,7 @@ static void print_tracenode(struct Tracenode* tracenode, int current_indent, int
 	}
 }
 
-static void print_task(struct Task* task) {
+void print_task(struct Task* task) {
 	int indent, counter;
 	struct Tracenode *tn = &task->tracenode;
 	struct Tracenode **nodes;
@@ -817,13 +812,13 @@ static void print_task(struct Task* task) {
 	}
 }
 
-static void print_task_top(struct Task *tasks[], int nr_tasks, long nr_pages_limit, short json, short peak)
+void print_tasks(struct Task *tasks[], int nr_tasks, long nr_pages_limit, short json, short peak)
 {
 	if (json)
 		log_info("[\n");
 	for (int i = 0; i < nr_tasks && nr_pages_limit > 0; i++) {
 		if (json) {
-			print_task_json(tasks[i], i + 1 == nr_tasks);
+			print_task_json(tasks[i]);
 		} else {
 			print_task(tasks[i]);
 		}
@@ -932,6 +927,7 @@ static int comp_module_mem(const void *x, const void *y) {
 	}
 }
 
+// TODO: shallow is ignored
 struct Module **collect_modules_sorted() {
 	struct Task *task;
 	struct HashNode *hnode;
@@ -954,107 +950,4 @@ struct Module **collect_modules_sorted() {
 	qsort((void*)modules, module_map.size, sizeof(struct Modules*), comp_module_mem);
 
 	return modules;
-}
-
-static void report_module_summary(void) {
-	struct Module **modules;
-	modules = collect_modules_sorted();
-
-	for (int i = 0; i < module_map.size; ++i) {
-		log_info(
-				"Module %s using %d pages, peak allocation %d pages\n",
-				modules[i]->name,
-				modules[i]->tracenode.record->pages_alloc,
-				modules[i]->tracenode.record->pages_alloc_peak
-			);
-	}
-
-	free(modules);
-}
-
-static void report_module_top(void) {
-	struct Module **modules;
-	modules = collect_modules_sorted();
-
-	for (int i = 0; i < module_map.size; ++i) {
-		log_info("Top stack usage of module %s:\n", modules[i]->name);
-		print_tracenode(&modules[i]->tracenode, 2, 1, 0);
-	}
-
-	free(modules);
-}
-
-static void report_task_summary (void) {
-	long nr_pages_limit;
-	struct Task **tasks;
-
-	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-
-	tasks = collect_tasks_sorted(&task_map, 0);
-	for (int i = 0; i < task_map.size; ++i) {
-		log_info(
-				"Task %s (%u) using %u pages, peak usage %u pages\n",
-				tasks[i]->task_name, tasks[i]->pid,
-				tasks[i]->tracenode.record->pages_alloc,
-				tasks[i]->tracenode.record->pages_alloc_peak);
-	}
-
-	free(tasks);
-};
-
-static void report_task_top (void) {
-	struct Task **tasks;
-	long nr_pages_limit;
-	int task_limit;
-
-	task_limit = task_map.size;
-	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-	tasks = collect_tasks_sorted(&task_map, 0);
-
-	print_task_top(tasks, task_limit, nr_pages_limit, 0, 0);
-
-	free(tasks);
-};
-
-static void report_task_top_json(void) {
-	struct Task **tasks;
-	long nr_pages_limit;
-	int task_limit;
-
-	task_limit = task_map.size;
-	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-	tasks = collect_tasks_sorted(&task_map, 0);
-
-	print_task_top(tasks, task_limit, nr_pages_limit, 1, 0);
-
-	free(tasks);
-};
-
-struct reporter_table_t  reporter_table[] = {
-	{"module_summary", report_module_summary},
-	{"module_top", report_module_top},
-	{"task_summary", report_task_summary},
-	{"task_top", report_task_top},
-	{"task_top_json", report_task_top_json},
-};
-
-int report_table_size = sizeof(reporter_table) / sizeof(struct reporter_table_t);
-
-void final_report(struct HashMap *task_map, int task_limit) {
-	load_kallsyms();
-
-	char *report_type;
-	report_type = strtok(m_report, ",");
-
-	do {
-		for (int i = 0; i < report_table_size; ++i) {
-			if (!strcmp(reporter_table[i].name, report_type)) {
-				reporter_table[i].report();
-			}
-		}
-		report_type = strtok(NULL, ",");
-	} while (report_type);
 }

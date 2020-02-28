@@ -16,6 +16,7 @@
 #include "backend/ftrace.h"
 #include "memstrack.h"
 #include "tracing.h"
+#include "report.h"
 #include "proc.h"
 #include "tui.h"
 
@@ -258,7 +259,6 @@ int main(int argc, char **argv) {
 						}
 
 						if (!strcmp(reporter_table[i].name, report_type)) {
-							reporter_table[i].report();
 							break;
 						}
 					}

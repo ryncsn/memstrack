@@ -8,7 +8,7 @@
 
 typedef void* trace_addr_t;
 
-extern struct HashMap task_map;
+extern struct HashMap task_map, module_map;
 
 extern unsigned long trace_count;
 extern unsigned long page_alloc_counter, page_free_counter;
@@ -97,21 +97,19 @@ struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);
 struct Task* get_task(struct HashMap *map, char* task_name, int pid);
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid);
-struct Task **collect_tasks_sorted(struct HashMap *map, int shallow);
+struct Task **collect_tasks_sorted(int shallow);
+struct Module **collect_modules_sorted();
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 struct Module *get_or_new_module(char *name);
 
-void final_report(struct HashMap *map, int task_limit);
+void print_tracenode(struct Tracenode* tracenode, int indent, int substack_limit, int throttle);
+void print_tracenode_json(struct Tracenode* tracenode, void *blob);
+
+void print_task(struct Task* task);
+void print_task_json(struct Task* task);
+
 int for_each_tracenode_ret(struct Tracenode* root, int (*op)(struct Tracenode *node, void *blob), void *blob);
 void for_each_tracenode(struct Tracenode* root, void (*op)(struct Tracenode *node, void *blob), void *blob);
-
-struct reporter_table_t {
-	char *name;
-	void (*report)(void);
-};
-
-extern struct reporter_table_t reporter_table[];
-extern int report_table_size;
 
 #define _MEMORY_TRACER_TRACING_LIB 1
 

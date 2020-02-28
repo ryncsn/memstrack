@@ -7,7 +7,6 @@
 #include "memstrack.h"
 #include "proc.h"
 
-
 static struct slab_info *slab_info_table;
 static int slab_info_size = 0, slab_info_number = 0;
 
