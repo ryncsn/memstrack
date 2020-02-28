@@ -39,9 +39,10 @@ install -p -m 755 memstrack %{buildroot}/%{_bindir}
 # dracut module part
 # keep dracutlibdir consistent with the definition in dracut.spec
 %define dracutlibdir %{_prefix}/lib/dracut
-%define dracutmoduledir %{dracutlibdir}/module.d/99memstrack
+%define dracutmoduledir %{dracutlibdir}/modules.d/99memstrack
 mkdir -p %{buildroot}/%{dracutmoduledir}
 
+install -p -m 644 misc/99memstrack/memstrack.service %{buildroot}/%{dracutmoduledir}/memstrack.service
 install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/module-setup.sh
 install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduledir}/start-tracing.sh
 install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/stop-tracing.sh
@@ -53,6 +54,7 @@ install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledi
 
 %files dracut
 %dir %{dracutmoduledir}
+%{dracutmoduledir}/memstrack.service
 %{dracutmoduledir}/module-setup.sh
 %{dracutmoduledir}/start-tracing.sh
 %{dracutmoduledir}/stop-tracing.sh
