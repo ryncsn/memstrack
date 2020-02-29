@@ -87,8 +87,8 @@ int print_slab_usage()
 	log_info("Top Slab Usage:\n");
 	for (int i = 0; i < slab_info_number; ++i) {
 		entry = &slab_info_table[i];
-		unsigned long size_in_mb = entry->num_slabs * entry->pagesperslab * page_size / 1024 / 1024;
-		log_info("%17s: %lu MB\n", entry->name, size_in_mb);
+		double size_in_mb = ((double)entry->num_slabs * entry->pagesperslab * page_size) / 1024 / 1024;
+		log_info("%17s: %.1lf MB\n", entry->name, size_in_mb);
 	}
 
 	return 0;

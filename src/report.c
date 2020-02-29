@@ -5,6 +5,7 @@
 #include "memstrack.h"
 #include "tracing.h"
 #include "report.h"
+#include "proc.h"
 
 static void report_module_summary(void) {
 	struct Module **modules;
@@ -12,9 +13,11 @@ static void report_module_summary(void) {
 
 	for (int i = 0; i < module_map.size; ++i) {
 		log_info(
-				"Module %s using %d pages, peak allocation %d pages\n",
+				"Module %s using %.1lfMB (%d pages), peak allocation %.1lfMB (%d pages)\n",
 				modules[i]->name,
+				modules[i]->tracenode.record->pages_alloc * ((double)page_size) / 1024,
 				modules[i]->tracenode.record->pages_alloc,
+				modules[i]->tracenode.record->pages_alloc_peak * ((double)page_size) / 1024,
 				modules[i]->tracenode.record->pages_alloc_peak
 			);
 	}
@@ -99,13 +102,17 @@ static void report_task_top_json(void) {
 	free(tasks);
 };
 
+static void report_proc_slab_static(void) {
+	print_slab_usage();
+}
+
 struct reporter_table_t  reporter_table[] = {
 	{"module_summary", report_module_summary},
 	{"module_top", report_module_top},
 	{"task_summary", report_task_summary},
 	{"task_top", report_task_top},
 	{"task_top_json", report_task_top_json},
-	{"proc_slab_static", report_module_summary},
+	{"proc_slab_static", report_proc_slab_static},
 };
 
 int report_table_size = sizeof(reporter_table) / sizeof(struct reporter_table_t);
@@ -119,7 +126,9 @@ void final_report(struct HashMap *task_map, int task_limit) {
 	do {
 		for (int i = 0; i < report_table_size; ++i) {
 			if (!strcmp(reporter_table[i].name, report_type)) {
+				log_info("\n======== Report format %s: ========\n", report_type);
 				reporter_table[i].report();
+				log_info("======== Report format %s END ========\n", report_type);
 			}
 		}
 		report_type = strtok(NULL, ",");
