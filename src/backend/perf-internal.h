@@ -21,13 +21,15 @@ struct PerfEvent {
 	struct PerfEventField fields[];
 };
 
+typedef int (*SampleHandler) (const unsigned char*);
+
 struct PerfEventRing {
 	int cpu;
 	int fd;
 
 	struct PerfEvent *event;
 
-	int (*sample_handler) (struct PerfEventRing*, const unsigned char*);
+	SampleHandler sample_handler;
 
 	void *mmap;
 	unsigned char *data;
@@ -39,11 +41,9 @@ struct PerfEventRing {
 	struct perf_event_mmap_page *meta;
 };
 
-typedef int (*SampleHandler) (struct PerfEvent*, const unsigned char*);
-
 struct perf_event_table_entry {
 	struct PerfEvent *event;
-	int (*handler)(struct PerfEventRing *ring, const unsigned char* header);
+	SampleHandler handler;
 	int (*is_enabled)(void);
 };
 

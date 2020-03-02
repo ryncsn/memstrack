@@ -20,8 +20,6 @@
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
-// TODO: Remove common fields to save buffer ?
-
 DefineEvent(
 	kmem, mm_page_alloc, 256,
 	IncludeCommonEventFields(),
@@ -93,12 +91,10 @@ static struct Tracenode* __process_stacktrace(
 }
 
 
-static void __process_common(struct PerfEventRing *ring, const unsigned char* header,
-		struct perf_sample_basic **body, struct perf_sample_callchain **callchain,
-		struct perf_sample_raw **raw) {
-	ring->counter++;
-
-	*body = (struct perf_sample_basic*)header;
+static void __process_common(
+		const unsigned char* header,
+		struct perf_sample_callchain **callchain, struct perf_sample_raw **raw) {
+	// struct perf_sample_basic *body = (struct perf_sample_basic*)header;
 	header += sizeof(struct perf_sample_basic);
 
 	*callchain = (struct perf_sample_callchain*)header;
@@ -110,21 +106,21 @@ static void __process_common(struct PerfEventRing *ring, const unsigned char* he
 	//return header;
 }
 
-static int perf_handle_mm_page_alloc(struct PerfEventRing *ring, const unsigned char* header) {
+static int perf_handle_mm_page_alloc(const unsigned char* header) {
 	struct Task *task;
 	struct PageEvent event;
 
-	struct perf_sample_basic *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(ring, header, &body, &callchain, &raw);
+	__process_common(header, &callchain, &raw);
 
 	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
 		// TODO: Older kernel won't work yet
 	} else {
 		unsigned long pfn = read_data_from_perf_raw(mm_page_alloc, pfn, unsigned long, raw);
 		unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);
+		int pid = read_data_from_perf_raw(mm_page_alloc, common_pid, int, raw);
 
 		event.pages_alloc = 1;
 		event.pfn = pfn;
@@ -133,7 +129,7 @@ static int perf_handle_mm_page_alloc(struct PerfEventRing *ring, const unsigned 
 			event.pages_alloc *= 2;
 		}
 
-		task = get_or_new_task(&task_map, NULL, body->pid);
+		task = get_or_new_task(&task_map, NULL, pid);
 
 		__process_stacktrace(callchain, task, &event);
 	}
@@ -141,14 +137,13 @@ static int perf_handle_mm_page_alloc(struct PerfEventRing *ring, const unsigned 
 	return 0;
 }
 
-static int perf_handle_mm_page_free(struct PerfEventRing *ring, const unsigned char* header) {
+static int perf_handle_mm_page_free(const unsigned char* header) {
 	struct PageEvent event;
 
-	struct perf_sample_basic *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(ring, header, &body, &callchain, &raw);
+	__process_common(header, &callchain, &raw);
 
 	unsigned long pfn = read_data_from_perf_raw(mm_page_free, pfn, unsigned long, raw);
 	unsigned int order = read_data_from_perf_raw(mm_page_free, order, unsigned int, raw);
@@ -166,13 +161,12 @@ static int perf_handle_mm_page_free(struct PerfEventRing *ring, const unsigned c
 	return 0;
 }
 
-static int perf_handle_module_load(struct PerfEventRing *ring, const unsigned char* header) {
+static int perf_handle_module_load(const unsigned char* header) {
 	struct Task *task;
-	struct perf_sample_basic *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(ring, header, &body, &callchain, &raw);
+	__process_common(header, &callchain, &raw);
 
 	struct data_loc_fixed {
 		uint16_t offset;
@@ -180,8 +174,9 @@ static int perf_handle_module_load(struct PerfEventRing *ring, const unsigned ch
 	} value = read_data_from_perf_raw(module_load, name, struct data_loc_fixed, raw);
 
 	char *name = (char*)get_data_p_from_raw(raw) + value.offset;
+	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
 
-	task = get_or_new_task(&task_map, NULL, body->pid);
+	task = get_or_new_task(&task_map, NULL, pid);
 	task->module_loading = strdup(name);
 	// TODO: Better informing
 	log_error("Module loading %s\n", name);
@@ -191,16 +186,17 @@ static int perf_handle_module_load(struct PerfEventRing *ring, const unsigned ch
 	return 0;
 }
 
-static int perf_handle_sys_exit_init_module(struct PerfEventRing *ring, const unsigned char* header) {
+static int perf_handle_sys_exit_init_module(const unsigned char* header) {
 	struct Task *task;
-	struct perf_sample_basic *body;
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(ring, header, &body, &callchain, &raw);
+	__process_common(header, &callchain, &raw);
+
+	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
 
 	log_debug("Module loading exit\n");
-	task = get_or_new_task(&task_map, NULL, body->pid);
+	task = get_or_new_task(&task_map, NULL, pid);
 	if (!task->module_loading) {
 		log_debug("Ignoring sys_exit_init_module of task %ld\n", task->pid);
 	} else {
@@ -320,12 +316,12 @@ int perf_ring_start_sampling(struct PerfEventRing *ring) {
 	return ret;
 }
 
-static int perf_handle_sample(struct PerfEventRing *ring, const unsigned char* header) {
+static int perf_debug_handler(struct PerfEventRing *ring, const unsigned char* header) {
 	struct perf_sample_basic *body = (struct perf_sample_basic*)header;
 	log_debug("Event: %s", ring->event->name);
 
 	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_TID & PERF_SAMPLE_CPU) {
-		log_debug(" on PID %d, TID %d, CPU %d\n", ring->event->name, body->pid, body->tid, ring->cpu);
+		log_debug(" on CPU %d\n", ring->cpu);
 	} else {
 		log_debug("\n");
 	}
@@ -355,9 +351,9 @@ static int perf_handle_sample(struct PerfEventRing *ring, const unsigned char* h
 	return 0;
 }
 
-static int perf_handle_lost_event(const unsigned char* header, int cpu) {
+static int perf_handle_lost_event(const unsigned char* header, int cpu, char *event_name) {
 	struct perf_lost_events *body = (struct perf_lost_events*)header;
-	log_warn("Lost %d events on CPU %d!", body->lost, cpu);
+	log_warn("Lost %d %s events on CPU %d!", body->lost, event_name, cpu);
 	return 0;
 }
 
@@ -377,13 +373,13 @@ int perf_ring_process(struct PerfEventRing *perf_event) {
 			switch (header->type) {
 				case PERF_RECORD_SAMPLE:
 					if (perf_event->sample_handler) {
-						perf_event->sample_handler(perf_event, data);
+						perf_event->sample_handler(data);
 					} else {
-						perf_handle_sample(perf_event, data);
+						perf_debug_handler(perf_event, data);
 					}
 					break;
 				case PERF_RECORD_LOST:
-					perf_handle_lost_event(data, perf_event->cpu);
+					perf_handle_lost_event(data, perf_event->cpu, perf_event->event->name);
 					break;
 					// case PERF_RECORD_MMAP:
 					// case PERF_RECORD_FORK:

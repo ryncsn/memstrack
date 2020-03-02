@@ -89,13 +89,12 @@ struct read_format_group_data {
 
 #define SAMPLE_CONFIG_FLAG ( \
 	PERF_SAMPLE_RAW | \
-	PERF_SAMPLE_TID | \
 	PERF_SAMPLE_CALLCHAIN \
 	)
 
 struct perf_sample_id {
-	uint32_t pid;			/* if PERF_SAMPLE_TID set */
-	uint32_t tid;			/* if PERF_SAMPLE_TID set */
+//	uint32_t pid;			/* if PERF_SAMPLE_TID set */
+//	uint32_t tid;			/* if PERF_SAMPLE_TID set */
 //	u64 time;			/* if PERF_SAMPLE_TIME set */
 //	u64 id;				/* if PERF_SAMPLE_ID set */
 //	u64 stream_id;			/* if PERF_SAMPLE_STREAM_ID set	*/
@@ -115,7 +114,7 @@ struct perf_sample_basic {
 	struct perf_event_header header;
 //	uint64_t sample_id;		/* if PERF_SAMPLE_IDENTIFIER */
 //	uint64_t ip;			/* if PERF_SAMPLE_IP */
-	uint32_t pid, tid;		/* if PERF_SAMPLE_TID */
+//	uint32_t pid, tid;		/* if PERF_SAMPLE_TID */
 //	uint64_t time;			/* if PERF_SAMPLE_TIME */
 //	uint64_t addr;			/* if PERF_SAMPLE_ADDR */
 //	uint64_t id;			/* if PERF_SAMPLE_ID */
@@ -132,7 +131,7 @@ struct perf_sample_callchain {
 
 struct perf_sample_raw {
 	uint32_t size;			/* if PERF_SAMPLE_RAW */
-	const unsigned char data;		/* if PERF_SAMPLE_RAW */
+	const unsigned char data;	/* if PERF_SAMPLE_RAW */
 };
 
 struct perf_sample_data_loc_fixed {
