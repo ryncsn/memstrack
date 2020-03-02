@@ -15,9 +15,9 @@ static void report_module_summary(void) {
 		log_info(
 				"Module %s using %.1lfMB (%d pages), peak allocation %.1lfMB (%d pages)\n",
 				modules[i]->name,
-				modules[i]->tracenode.record->pages_alloc * ((double)page_size) / 1024,
+				modules[i]->tracenode.record->pages_alloc * ((double)page_size) / 1024 / 1024,
 				modules[i]->tracenode.record->pages_alloc,
-				modules[i]->tracenode.record->pages_alloc_peak * ((double)page_size) / 1024,
+				modules[i]->tracenode.record->pages_alloc_peak * ((double)page_size) / 1024 / 1024,
 				modules[i]->tracenode.record->pages_alloc_peak
 			);
 	}
