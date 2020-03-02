@@ -27,20 +27,20 @@ fi
 
 memstrack_cmdline=$(getargnum 0 0 3 rd.memstrack)
 
-if [ "$memstrack_cmdline" -gt 2 ]; then
-        echo "======== Detailed allocation report ========"
+if [ -n "$memstrack_cmdline" ] && [ "$memstrack_cmdline" -gt 2 ]; then
+        echo "======== Starting detailed allocation tracing ========"
         memstrack --report module_summary,module_top,task_top,slab_static --notui --throttle 60 -o /memory-debug & disown
         unset memstrack_cmdline
 fi
 
-if [ "$memstrack_cmdline" -gt 1 ]; then
-        echo "======== Top module memory usage and stacktrace report ========"
+if [ -n "$memstrack_cmdline" ] && [ "$memstrack_cmdline" -gt 1 ]; then
+        echo "======== Starting module memory usage and stacktrace tracing ========"
         memstrack --report module_summary,module_top,proc_slab_static --notui -o /memory-debug & disown
         unset memstrack_cmdline
 fi
 
-if [ "$memstrack_cmdline" -gt 0 ]; then
-        echo "======== Top module memory usage report ========"
+if [ -n "$memstrack_cmdline" ] && [ "$memstrack_cmdline" -gt 0 ]; then
+        echo "======== Starting module memory usage tracing ========"
         memstrack --report module_summary --notui -o /memory-debug & disown
         unset memstrack_cmdline
 fi
