@@ -1,19 +1,10 @@
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
-#include <unistd.h>
 #include <malloc.h>
-#include <stdio.h>
-#include <errno.h>
 #include <string.h>
 #include <poll.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/ioctl.h>
-#include <sys/syscall.h>   /* For SYS_xxx definitions */
-#include <sys/sysinfo.h>
-#include <linux/perf_event.h>
 
-#include "perf-internal.h"
 #include "../memstrack.h"
+#include "perf-internal.h"
 
 int perf_event_ring_num;
 struct pollfd *perf_fds;
@@ -36,7 +27,7 @@ int perf_handling_init() {
 		}
 	}
 
-	perf_event_rings = (struct PerfEventRing*)malloc(perf_event_ring_num * sizeof(struct PerfEventRing));
+	perf_event_rings = (struct PerfEventRing*)calloc(perf_event_ring_num, sizeof(struct PerfEventRing));
 
 	for (int cpu = 0; cpu < cpu_num; cpu++) {
 		for (int i = 0; i < perf_event_entry_number; i++){

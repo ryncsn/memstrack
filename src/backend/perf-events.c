@@ -1,15 +1,13 @@
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
 #include <unistd.h>
-#include <stdio.h>
 #include <errno.h>
 #include <string.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <malloc.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
-#include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <sys/sysinfo.h>
-#include <linux/perf_event.h>
 
 #include "perf-internal.h"
 #include "perf-events-define.h"
@@ -21,7 +19,7 @@
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
 DefineEvent(
-	kmem, mm_page_alloc, 256,
+	kmem, mm_page_alloc, 512,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn),
@@ -31,7 +29,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 256,
+	kmem, mm_page_free, 512,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn)
@@ -90,7 +88,6 @@ static struct Tracenode* __process_stacktrace(
 	return tp;
 }
 
-
 static void __process_common(
 		const unsigned char* header,
 		struct perf_sample_callchain **callchain, struct perf_sample_raw **raw) {
@@ -122,6 +119,10 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 		unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);
 		int pid = read_data_from_perf_raw(mm_page_alloc, common_pid, int, raw);
 
+		// TODO: pfn == -1?
+		if (pfn == ULONG_MAX)
+			return 0;
+
 		event.pages_alloc = 1;
 		event.pfn = pfn;
 
@@ -147,6 +148,10 @@ static int perf_handle_mm_page_free(const unsigned char* header) {
 
 	unsigned long pfn = read_data_from_perf_raw(mm_page_free, pfn, unsigned long, raw);
 	unsigned int order = read_data_from_perf_raw(mm_page_free, order, unsigned int, raw);
+
+	// TODO: pfn == -1?
+	if (pfn == ULONG_MAX)
+		return 0;
 
 	event.pages_alloc = -1;
 	event.pfn = pfn;
@@ -178,10 +183,9 @@ static int perf_handle_module_load(const unsigned char* header) {
 
 	task = get_or_new_task(&task_map, NULL, pid);
 	task->module_loading = strdup(name);
-	// TODO: Better informing
-	log_error("Module loading %s\n", name);
 
-	// TODO: On event load, remove all module_loading
+	// TODO: On event lost, remove all module_loading
+	log_debug("Module loading %s\n", name);
 
 	return 0;
 }
@@ -211,10 +215,10 @@ static int perf_handle_sys_exit_init_module(const unsigned char* header) {
 static int always_enable(void) { return 1; }
 
 const struct perf_event_table_entry perf_event_table[] = {
-	{ &get_perf_event(mm_page_alloc),		perf_handle_mm_page_alloc,	always_enable },
-	{ &get_perf_event(mm_page_free),		perf_handle_mm_page_free,	always_enable },
-	{ &get_perf_event(module_load),			perf_handle_module_load,	always_enable },
-//	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,	always_enable },
+	{ &get_perf_event(mm_page_alloc),		perf_handle_mm_page_alloc,		always_enable },
+	{ &get_perf_event(mm_page_free),		perf_handle_mm_page_free,		always_enable },
+	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable },
+//	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
 	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
 };
 
@@ -256,8 +260,8 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 
 	buf_size = align_buffer(ring->event->buf_size);
 
-	/* Try wake up when there are 4KB of event to process */
-	attr.wakeup_watermark = 4096;
+	/* Try wake up when there are 1KB of event to process */
+	attr.wakeup_watermark = 1024;
 	if (buf_size < (int)attr.wakeup_watermark) {
 		log_error("perf ring buffer too small!\n");
 	}

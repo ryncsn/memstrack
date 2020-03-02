@@ -1,11 +1,9 @@
 #define _GNU_SOURCE
-#include <linux/limits.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <string.h>
-#include <assert.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
@@ -16,7 +14,7 @@
 unsigned long page_alloc_counter, page_free_counter;
 
 static char *pid_map[65535];
-static unsigned long max_pfn;
+static unsigned long max_pfn, start_pfn;
 static unsigned int trivial_peak_limit = 64;
 
 enum key_type {
@@ -84,40 +82,47 @@ int symbol_table_len;
 static char* get_process_name_by_pid(const int pid)
 {
 	char fname_buf[sizeof("/proc/65535/cmdline")];
-	char *name;
+	char buf[TASK_NAME_LEN_MAX];
 	FILE *f;
 
 	sprintf(fname_buf, "/proc/%d/cmdline", pid);
 	f = fopen(fname_buf,"r");
 	if (f) {
 		size_t size;
-		name = (char*)malloc(TASK_NAME_LEN_MAX);
-		size = fread(name, sizeof(char), TASK_NAME_LEN_MAX, f);
+		size = fread(buf, sizeof(char), TASK_NAME_LEN_MAX, f);
 		if (size > 0){
-			name[size - 1] = '\0';
+			buf[size - 1] = '\0';
 		}
 		fclose(f);
 	} else {
 		log_debug("Failed to retrive process name of %d\n", pid);
-		name = (char*)malloc(PID_LEN_MAX + 2);
-		sprintf(name, "(%d)", pid);
+		sprintf(buf, "(%d)", pid);
 	}
 
-	return name;
+	return strdup(buf);
 }
 
 void mem_tracing_init() {
 	// unsigned long total_pages;
-	struct zone_info *zone;
+	struct zone_info *zone, *prev;
 
 	// total_pages = sysconf(_SC_PHYS_PAGES);
 	parse_zone_info(&zone);
+	start_pfn = ULONG_MAX;
 	max_pfn = 0;
+
+	trivial_peak_limit = 1024 * 1024 / page_size;
 
 	while (zone) {
 		if (max_pfn < zone->spanned + zone->start_pfn)
 			max_pfn = zone->spanned + zone->start_pfn;
+
+		if (start_pfn > zone->min)
+			start_pfn = zone->min;
+
+		prev = zone;
 		zone = zone->next_zone;
+		free(prev);
 	}
 
 	// TODO: handle holes to save memory
@@ -363,11 +368,9 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 	}
 	struct Task *task = try_get_task(task_name, pid);
 	if (task == NULL) {
-		int task_name_len = strlen(task_name) + 1;
 		task = (struct Task*)calloc(1, sizeof(struct Task));
-		task->task_name = (char*)malloc(task_name_len);
+		task->task_name = strdup(task_name);
 		task->pid = pid;
-		strcpy(task->task_name, task_name);
 		insert_hash_node(map, &task->node, task);
 		return task;
 	}
@@ -717,9 +720,11 @@ void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	log_info("{\n");
 	log_info("%s \"pages_alloc\": %d", padding, tracenode->record->pages_alloc);
 	log_info(",\n%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
+
 	if (tracenode->children) {
 		log_info(",\n%s \"tracenodes\": {\n", padding);
 		nodes = collect_tracenodes_sorted(tracenode->children, &counter, 1);
+
 		for (int i = 0; i < counter; i++)
 			print_tracenode_json(nodes[i], &next);
 

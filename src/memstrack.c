@@ -1,5 +1,4 @@
 #define _GNU_SOURCE
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <unistd.h>
@@ -9,7 +8,6 @@
 #include <errno.h>
 #include <malloc.h>
 
-#include <sys/timerfd.h>
 #include <sys/resource.h>
 
 #include "backend/perf.h"
@@ -49,6 +47,7 @@ int m_log(int level, const char *__restrict fmt, ...){
 	if (!m_debug && level <= LOG_LVL_DEBUG) {
 		return 0;
 	}
+
 	int ret;
 	va_list args;
 	va_start (args, fmt);

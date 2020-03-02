@@ -1,17 +1,12 @@
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
 #include <unistd.h>
 #include <stdio.h>
-#include <errno.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/ioctl.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <sys/sysinfo.h>
-#include <linux/perf_event.h>
 
-#include "../memstrack.h"
 #include "perf-internal.h"
+#include "../memstrack.h"
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
