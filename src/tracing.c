@@ -13,7 +13,6 @@
 
 unsigned long page_alloc_counter, page_free_counter;
 
-static char *pid_map[65535];
 static unsigned long max_pfn, start_pfn;
 static unsigned int trivial_peak_limit = 64;
 
@@ -81,7 +80,7 @@ int symbol_table_len;
 
 static char* get_process_name_by_pid(const int pid)
 {
-	char fname_buf[sizeof("/proc/65535/cmdline")];
+	char fname_buf[sizeof("/proc//cmdline") + 6];
 	char buf[TASK_NAME_LEN_MAX];
 	FILE *f;
 
@@ -358,15 +357,15 @@ static struct Task* try_get_task(char* task_name, long pid) {
 };
 
 struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
+	struct Task *task;
 	if (task_name == NULL) {
-		// TODO: Remove Pid map entry if previous task exited
-		char *cmdline = pid_map[pid % 65535];
-		if (!cmdline) {
-			cmdline = pid_map[pid % 65535] = get_process_name_by_pid(pid);
-		}
-		task_name = cmdline;
+		task_name = get_process_name_by_pid(pid);
+		task = try_get_task(task_name, pid);
+		free(task_name);
+	} else {
+		task = try_get_task(task_name, pid);
 	}
-	struct Task *task = try_get_task(task_name, pid);
+
 	if (task == NULL) {
 		task = (struct Task*)calloc(1, sizeof(struct Task));
 		task->task_name = strdup(task_name);

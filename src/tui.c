@@ -111,13 +111,14 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 static void trace_refresh_tui() {
 	struct line_info line_info;
 	line_info.current = 0;
-	line_info.limit = LINES - MISC_PAD - 3;
+	line_info.limit = LINES - MISC_PAD - 4;
 	line_info.offset = MISC_PAD + 1;
 
 	info = &line_info;
 
 	for (int task_n = 0; task_n < tasks_num; ++task_n) {
-		tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0);
+		if (tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0))
+			return;
 	}
 }
 
