@@ -356,15 +356,9 @@ static struct Task* try_get_task(char* task_name, long pid) {
 	}
 };
 
-struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
+static struct Task* do_get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 	struct Task *task;
-	if (task_name == NULL) {
-		task_name = get_process_name_by_pid(pid);
-		task = try_get_task(task_name, pid);
-		free(task_name);
-	} else {
-		task = try_get_task(task_name, pid);
-	}
+	task = try_get_task(task_name, pid);
 
 	if (task == NULL) {
 		task = (struct Task*)calloc(1, sizeof(struct Task));
@@ -373,6 +367,22 @@ struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
 		insert_hash_node(map, &task->node, task);
 		return task;
 	}
+
+	return task;
+};
+
+
+struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
+	struct Task *task;
+
+	if (task_name == NULL) {
+		task_name = get_process_name_by_pid(pid);
+		task = do_get_or_new_task(map, task_name, pid);
+		free(task_name);
+	} else {
+		task = do_get_or_new_task(map, task_name, pid);
+	}
+
 	return task;
 };
 
