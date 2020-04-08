@@ -328,6 +328,7 @@ int main(int argc, char **argv) {
 	mem_tracing_init();
 
 	signal(SIGINT, on_signal);
+	signal(SIGTERM, on_signal);
 
 	init_fds();
 
