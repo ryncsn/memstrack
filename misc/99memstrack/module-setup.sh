@@ -1,7 +1,15 @@
 #!/usr/bin/bash
 
 check() {
-    return 0
+    if type -P memstrack >/dev/null; then
+        dinfo "memstrack is available"
+        return 0
+    fi
+
+    dinfo "memstrack is not available"
+    dinfo "If you need to use rd.memdebug>=4, please install memstrack"
+
+    return 1
 }
 
 depends() {
@@ -10,11 +18,10 @@ depends() {
 
 install() {
     inst "/bin/memstrack" "/bin/memstrack"
-    inst "$moddir/start-tracing.sh" "/bin/memstrack-start"
-    chmod a+x "$initdir/usr/bin/memstrack-start"
+
+    inst "$moddir/memstrack-start.sh" "/bin/memstrack-start"
+    inst_hook cleanup 99 "$moddir/memstrack-report.sh"
 
     inst "$moddir/memstrack.service" "$systemdsystemunitdir/memstrack.service"
-    ln_r "$systemdsystemunitdir/memstrack.service" "$systemdsystemunitdir/sysinit.target.wants/memstrack.service"
-
-    inst_hook cleanup 99 "$moddir/stop-tracing.sh"
+    systemctl -q --root "$initdir" add-wants initrd.target memstrack.service
 }

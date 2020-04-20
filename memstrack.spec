@@ -43,9 +43,9 @@ install -p -m 755 memstrack %{buildroot}/%{_bindir}
 mkdir -p %{buildroot}/%{dracutmoduledir}
 
 install -p -m 644 misc/99memstrack/memstrack.service %{buildroot}/%{dracutmoduledir}/memstrack.service
-install -p -m 644 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/module-setup.sh
-install -p -m 755 misc/99memstrack/start-tracing.sh %{buildroot}/%{dracutmoduledir}/start-tracing.sh
-install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledir}/stop-tracing.sh
+install -p -m 755 misc/99memstrack/module-setup.sh %{buildroot}/%{dracutmoduledir}/module-setup.sh
+install -p -m 755 misc/99memstrack/memstrack-start.sh %{buildroot}/%{dracutmoduledir}/memstrack-start.sh
+install -p -m 755 misc/99memstrack/memstrack-report.sh %{buildroot}/%{dracutmoduledir}/memstrack-report.sh
 
 %files
 %doc README.md
@@ -56,8 +56,8 @@ install -p -m 755 misc/99memstrack/stop-tracing.sh %{buildroot}/%{dracutmoduledi
 %dir %{dracutmoduledir}
 %{dracutmoduledir}/memstrack.service
 %{dracutmoduledir}/module-setup.sh
-%{dracutmoduledir}/start-tracing.sh
-%{dracutmoduledir}/stop-tracing.sh
+%{dracutmoduledir}/memstrack-start.sh
+%{dracutmoduledir}/memstrack-report.sh
 
 %changelog
 {{{ git_dir_changelog }}}
