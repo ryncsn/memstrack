@@ -357,7 +357,7 @@ static int perf_debug_handler(struct PerfEventRing *ring, const unsigned char* h
 
 static int perf_handle_lost_event(const unsigned char* header, int cpu, char *event_name) {
 	struct perf_lost_events *body = (struct perf_lost_events*)header;
-	log_warn("Lost %d %s events on CPU %d!", body->lost, event_name, cpu);
+	log_warn("Lost %d %s events on CPU %d!\n", body->lost, event_name, cpu);
 	return 0;
 }
 
