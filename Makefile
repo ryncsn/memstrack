@@ -32,9 +32,9 @@ install: all
 dracut-module-install: install
 	mkdir -p $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack
 	cp misc/99memstrack/module-setup.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/module-setup.sh
-	cp misc/99memstrack/start-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/start-tracing.sh
-	cp misc/99memstrack/stop-tracing.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/stop-tracing.sh
 	cp misc/99memstrack/memstrack.service $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/memstrack.service
+	cp misc/99memstrack/memstrack-start.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/memstrack-start.sh
+	cp misc/99memstrack/memstrack-report.sh $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack/memstrack-report.sh
 
 uninstall:
 	rm $(DESTDIR)$(bindir)/memstrack
