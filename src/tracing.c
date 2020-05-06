@@ -50,7 +50,7 @@ static unsigned int comp_task(const struct HashNode *hnode, const void *key) {
 	const struct Task *lht = container_of(hnode, struct Task, node);
 	const struct Task *rht = key;
 	int diff = lht->pid - rht->pid;
-	if (!diff)
+	if (!diff && rht->task_name && lht->task_name)
 		diff = strcmp(lht->task_name, rht->task_name);
 	return diff;
 }
@@ -356,31 +356,24 @@ static struct Task* try_get_task(char* task_name, long pid) {
 	}
 };
 
-static struct Task* do_get_or_new_task(struct HashMap *map, char* task_name, int pid) {
+// TODO:
+// task_exit to clean up exited task, so memstrack can run for a longer time reliablely
+
+struct Task* get_or_new_task(char* task_name, int pid) {
 	struct Task *task;
 	task = try_get_task(task_name, pid);
 
 	if (task == NULL) {
 		task = (struct Task*)calloc(1, sizeof(struct Task));
-		task->task_name = strdup(task_name);
 		task->pid = pid;
-		insert_hash_node(map, &task->node, task);
+
+		if (task_name)
+			task->task_name = strdup(task_name);
+		else
+			task->task_name = get_process_name_by_pid(pid);
+
+		insert_hash_node(&task_map, &task->node, task);
 		return task;
-	}
-
-	return task;
-};
-
-
-struct Task* get_or_new_task(struct HashMap *map, char* task_name, int pid) {
-	struct Task *task;
-
-	if (task_name == NULL) {
-		task_name = get_process_name_by_pid(pid);
-		task = do_get_or_new_task(map, task_name, pid);
-		free(task_name);
-	} else {
-		task = do_get_or_new_task(map, task_name, pid);
 	}
 
 	return task;

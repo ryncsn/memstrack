@@ -250,7 +250,7 @@ static void do_ftrace_process() {
 		// char *event, *callsite;
 		event = strtok(event_info, " ");
 		// callsite = strtok(NULL, " ");
-		task = get_or_new_task(&task_map, task_info, pid);
+		task = get_or_new_task(task_info, pid);
 
 		// if (strncmp(event, "kmem_cache_alloc:", sizeof("kmem_cache_alloc:") - 2) == 0) {
 		// 	ftrace_handle_kmem_cache_alloc();
