@@ -287,6 +287,7 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	}
 
 	ring->fd = perf_fd;
+	ring->mmap = perf_mmap;
 	ring->mmap_size = buf_size;
 	ring->data_size = buf_size - page_size;
 	ring->meta = (struct perf_event_mmap_page *)perf_mmap;
