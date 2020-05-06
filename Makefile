@@ -39,5 +39,8 @@ dracut-module-install: install
 uninstall:
 	rm $(DESTDIR)$(bindir)/memstrack
 
+test: memstrack
+	misc/selftest.sh
+
 dracut-module-uninstall:
 	rm -rf $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack
