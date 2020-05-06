@@ -10,6 +10,11 @@ int perf_event_ring_num;
 struct pollfd *perf_fds;
 struct PerfEventRing *perf_event_rings;
 
+static void assign_cpu_no(int cpu_no, void *rings) {
+	(*(struct PerfEventRing**)rings)->cpu = cpu_no;
+	(*(struct PerfEventRing**)rings)++;
+}
+
 int perf_handling_init() {
 	int err;
 	int count = 0;
@@ -29,14 +34,17 @@ int perf_handling_init() {
 
 	perf_event_rings = (struct PerfEventRing*)calloc(perf_event_ring_num, sizeof(struct PerfEventRing));
 
-	for (int cpu = 0; cpu < cpu_num; cpu++) {
-		for (int i = 0; i < perf_event_entry_number; i++){
-			entry = &perf_event_table[i];
-			if (!entry->is_enabled()) {
-				continue;
-			}
+	for (int i = 0; i < perf_event_entry_number; i++){
+		struct PerfEventRing *rings = perf_event_rings + count;
+
+		entry = &perf_event_table[i];
+		if (!entry->is_enabled()) {
+			continue;
+		}
+
+		for_each_online_cpu(assign_cpu_no, &rings);
+		for (int cpu = 0; cpu < cpu_num; cpu++) {
 			perf_event_rings[count].event = entry->event;
-			perf_event_rings[count].cpu = cpu;
 			perf_event_rings[count].sample_handler = entry->handler;
 			count++;
 		}

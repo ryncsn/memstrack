@@ -2,6 +2,9 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <dirent.h>
+#include <errno.h>
+#include <malloc.h>
 #include <sys/syscall.h>   /* For SYS_xxx definitions */
 #include <sys/sysinfo.h>
 
@@ -10,6 +13,56 @@
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
+
+int for_each_online_cpu(void (*fn)(int cpu_no, void *blob), void *blob)
+{
+	DIR *dir;
+	FILE *file;
+	int cpu_no = -1;
+	struct dirent *entry;
+
+	dir = opendir("/sys/devices/system/cpu");
+	if (!dir) {
+		log_error("Failed to open CPU device path: %s\n", strerror(errno));
+		return -1;
+	}
+
+	do {
+		char pad;
+
+		entry = readdir(dir);
+		if (!entry) {
+			break;
+		}
+
+		if (sscanf(entry->d_name, "cpu%d%c", &cpu_no, &pad) == 1 && !strchr(entry->d_name, ' ')) {
+			char new_path[PATH_MAX];
+			snprintf(new_path, PATH_MAX, "/sys/devices/system/cpu/%s/online", entry->d_name);
+			log_error("/sys/devices/system/cpu/%s/online\n", entry->d_name);
+			file = fopen(new_path, "r");
+			if (file) {
+				char *line = NULL;
+				size_t size = 0;
+				if (getline(&line, &size, file) <= 0) {
+					log_error("Failed to check online status of CPU %d: %s\n", cpu_no, strerror(errno));
+					fclose(file);
+					continue;
+				}
+				if (line && line[0] != '0') {
+					fn(cpu_no, blob);
+				}
+				free(line);
+				fclose(file);
+			} else {
+				fn(cpu_no, blob);
+			}
+		}
+	} while (entry);
+
+	closedir(dir);
+
+	return 0;
+}
 
 int sys_perf_event_open(struct perf_event_attr *attr,
 		int pid, int cpu, int group_fd,
@@ -20,8 +73,19 @@ int sys_perf_event_open(struct perf_event_attr *attr,
 			group_fd, flags);
 }
 
+static void count_cpu(int cpu_no, void *counter) {
+	(*((int*)counter))++;
+}
+
+/*
+ * Try get online CPU, if fail, get all cpu count
+ */
 int perf_get_cpu_num(void) {
-	return get_nprocs();
+	int cpu_nr = 0;
+
+	for_each_online_cpu(count_cpu, &cpu_nr);
+
+	return cpu_nr;
 }
 
 int perf_do_load_event_info(struct PerfEvent *event)

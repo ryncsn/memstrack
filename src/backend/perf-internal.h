@@ -63,3 +63,5 @@ int perf_do_load_event_info(struct PerfEvent *entry);
 int sys_perf_event_open(struct perf_event_attr *attr,
 		int pid, int cpu, int group_fd,
 		unsigned long flags);
+
+int for_each_online_cpu(void (*fn)(int cpu_no, void *blob), void *blob);
