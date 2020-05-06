@@ -435,6 +435,8 @@ void load_kallsyms() {
 		symbol_table_len ++;
 	}
 
+	fclose(proc_kallsyms);
+
 	symbol_table = malloc(sizeof(struct symbol) * symbol_table_len);
 	for (int i = 0; i < symbol_table_len; ++i) {
 		symbol_table[i].addr = symbol_buf_head->symbol.addr;

@@ -186,7 +186,7 @@ static void init_fds(void) {
 	}
 
 	if (m_perf) {
-		perf_apply_fds(m_pollfds);
+		perf_apply_fds(m_pollfds + extra_fd_num);
 	} else if (m_ftrace) {
 		ftrace_apply_fds(m_pollfds + extra_fd_num);
 	}

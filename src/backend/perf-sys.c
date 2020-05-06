@@ -92,6 +92,7 @@ int perf_do_load_event_info(struct PerfEvent *event)
 {
 	char fmt_buffer[1024], *val;
 	FILE *fmt_file;
+	int ret = 1;
 
 	log_debug("\nValidating %s:%s\n", event->event_class, event->name);
 
@@ -114,7 +115,7 @@ int perf_do_load_event_info(struct PerfEvent *event)
 	if (val) {
 		if (strncmp(val, event->name, strlen(event->name))) {
 			log_error("Expecting event name %s but got %s\n", event->name, val);
-			return 1;
+			goto out;
 		}
 	} else {
 		log_error("Failed to verify event name of %s\n", event->name);
@@ -126,18 +127,18 @@ int perf_do_load_event_info(struct PerfEvent *event)
 	if (val) {
 		if (!sscanf(fmt_buffer + 3, "%d", &event->id)) {
 			log_error("Failed to parse event id of %s\n", event->name);
-			return 1;
+			goto out;
 		}
 	} else {
 		log_error("Failed to get event id of %s\n", event->name);
-		return 1;
+		goto out;
 	}
 	log_debug("ID of %s:%s is %d\n", event->event_class, event->name, event->id);
 
 	fgets(fmt_buffer, 1024, fmt_file);
 	if (strncmp(fmt_buffer, "format:", 7)) {
 		log_error("Failed to parse event format of %s\n", event->name);
-		return 1;
+		goto out;
 	}
 
 	while (fgets(fmt_buffer, 1024, fmt_file)) {
@@ -187,6 +188,9 @@ int perf_do_load_event_info(struct PerfEvent *event)
 					field->name, field->offset, field->size, field->is_signed);
 		}
 	}
+	ret = 0;
 
-	return 0;
+out:
+	fclose(fmt_file);
+	return ret;
 }
