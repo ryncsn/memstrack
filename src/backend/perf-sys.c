@@ -38,7 +38,6 @@ int for_each_online_cpu(void (*fn)(int cpu_no, void *blob), void *blob)
 		if (sscanf(entry->d_name, "cpu%d%c", &cpu_no, &pad) == 1 && !strchr(entry->d_name, ' ')) {
 			char new_path[PATH_MAX];
 			snprintf(new_path, PATH_MAX, "/sys/devices/system/cpu/%s/online", entry->d_name);
-			log_error("/sys/devices/system/cpu/%s/online\n", entry->d_name);
 			file = fopen(new_path, "r");
 			if (file) {
 				char *line = NULL;
