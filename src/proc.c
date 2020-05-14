@@ -94,24 +94,36 @@ int print_slab_usage()
 	return 0;
 }
 
-int parse_keyword(int until, FILE *file, char *buf, const char* keyword, const char *__restrict fmt, ...){
-	char *src;
+static int parse_keyword(int until, FILE *file, char *buf, const char* keyword, const char* endmark, const char *__restrict fmt, ...){
 	va_list args;
 	char *read;
 
-	while (!(src = strstr(buf, keyword)) && read) {
+	read = strstr(buf, keyword);
+	if (read)
+		goto match;
+
+	do {
+		if (endmark && strstr(buf, endmark))
+			break;
+
 		read = fgets(buf, PROC_MAX_LINE, file);
-	}
+		if (read)
+			read = strstr(buf, keyword);
+		else
+			break;
+	} while (until && !read);
 
 	if (!read) {
-		log_debug("Failed to read %s\n", keyword);
 		return -EAGAIN;
 	}
 
+match:
 	va_start (args, fmt);
-	vsscanf(src, fmt, args);
-	fgets(buf, PROC_MAX_LINE, file);
+	vsscanf(read, fmt, args);
 	va_end (args);
+
+	/* Read a new line as this line is already parsed to avoid parsing it again */
+	fgets(buf, PROC_MAX_LINE, file);
 
 	return 0;
 }
@@ -127,29 +139,33 @@ int parse_zone_info(struct zone_info **zone)
 		return -EINVAL;
 	}
 
-	fgets(line, PROC_MAX_LINE, file);
 	for (;;) {
-		if (parse_keyword(1, file, line, "Node", "Node %d, zone %s", &node, zone_name))
+		if (parse_keyword(1, file, line, "Node", NULL, "Node %d, zone %s", &node, zone_name))
 			break;
 
 		*zone = calloc(sizeof(struct zone_info), 1);
 		(*zone)->node = node;
 		strncpy((*zone)->name, zone_name, ZONENAMELEN);
 
-		if (parse_keyword(0, file, line, "free", "free %d", &(*zone)->free))
+		log_debug("Trying to parse node %d zone %s\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
+		if (parse_keyword(1, file, line, "free", "Node", "free %d", &(*zone)->free))
 			continue;
-		if (parse_keyword(0, file, line, "min", "min %d", &(*zone)->min))
+		if (parse_keyword(0, file, line, "min", NULL, "min %d", &(*zone)->min))
 			continue;
-		if (parse_keyword(0, file, line, "low", "low %d", &(*zone)->low))
+		if (parse_keyword(0, file, line, "low", NULL, "low %d", &(*zone)->low))
 			continue;
-		if (parse_keyword(0, file, line, "spanned", "spanned %d", &(*zone)->spanned))
+		if (parse_keyword(0, file, line, "high", NULL, "low %d", &(*zone)->high))
 			continue;
-		if (parse_keyword(0, file, line, "present", "present %d", &(*zone)->present))
+		if (parse_keyword(0, file, line, "spanned", NULL, "spanned %d", &(*zone)->spanned))
 			continue;
-		if (parse_keyword(0, file, line, "managed", "managed %d", &(*zone)->managed))
+		if (parse_keyword(0, file, line, "present", NULL, "present %d", &(*zone)->present))
 			continue;
-		if (parse_keyword(1, file, line, "start_pfn", "start_pfn: %d", &(*zone)->start_pfn))
+		if (parse_keyword(0, file, line, "managed", NULL, "managed %d", &(*zone)->managed))
 			continue;
+		if (parse_keyword(1, file, line, "start_pfn", "Node", "start_pfn: %d", &(*zone)->start_pfn))
+			continue;
+		log_debug("Page span is start: %d, spanned %d\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
+
 		zone = &(*zone)->next_zone;
 	}
 
