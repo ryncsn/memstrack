@@ -212,9 +212,6 @@ static void init_fds(void) {
 
 	if (!m_notui)
 		tui_apply_fds(m_pollfds);
-
-	if (m_perf)
-		perf_handling_start();
 }
 
 static void loop(void) {
@@ -353,6 +350,9 @@ int main(int argc, char **argv) {
 
 	if (!m_notui)
 		tui_init();
+
+	if (m_perf)
+		perf_handling_start();
 
 	while (m_loop) {
 		trace_count ++;

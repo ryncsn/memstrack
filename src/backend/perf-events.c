@@ -133,6 +133,7 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 
 	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
 		// TODO: Older kernel won't work yet
+		return -1;
 	} else {
 		unsigned long pfn = read_data_from_perf_raw(mm_page_alloc, pfn, unsigned long, raw);
 		unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);

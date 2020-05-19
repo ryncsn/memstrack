@@ -259,6 +259,8 @@ void tui_init(void) {
 	win_startx = 0;
 
 	trace_win = newwin(win_height, win_width, win_starty, win_startx);
+
+	need_page_free_always_backtrack();
 }
 
 void tui_update(void) {

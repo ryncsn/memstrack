@@ -35,13 +35,20 @@ unsigned long page_alloc_counter, page_free_counter;
 static unsigned long max_pfn, start_pfn;
 static unsigned int trivial_peak_limit = 64;
 
+static unsigned int page_free_always_backtrack;
 enum key_type {
 	KEY_ADDR = 0,
 	KEY_SYMBOL,
 } key_type;
 
+// Used for ftrace, kernel will resolve the symbol
 void store_symbol_instead(void) {
 	key_type = KEY_SYMBOL;
+}
+
+// Used for UI, need to update the whole stack trace tree on page free
+void need_page_free_always_backtrack(void) {
+	page_free_always_backtrack = 1;
 }
 
 char* get_tracenode_module(struct Tracenode *node) {
@@ -159,9 +166,6 @@ static int compTracenode(const struct TreeNode *root, const void *key) {
 }
 
 static int is_trivial_record(struct Record *record) {
-	if (!record)
-		return 1;
-
 	if (record->pages_alloc == 0 && record->pages_alloc_peak < trivial_peak_limit) {
 		return 1;
 	}
@@ -173,17 +177,15 @@ static int is_trivial_tracenode(struct Tracenode *node) {
 	if (node->children)
 		return 0;
 
-	if (is_trivial_record(node->record)) {
-		return 1;
-	}
+	if (node->record)
+		return is_trivial_record(node->record);
 
-	return 0;
+	return 1;
 }
 
-static void do_free_tracenode_record (struct Tracenode *tracenode) {
+static void free_tracenode_record(struct Tracenode *tracenode) {
 	if (tracenode->record->blob) {
 		free(tracenode->record->blob);
-		tracenode->record->blob = NULL;
 	}
 
 	free(tracenode->record);
@@ -191,26 +193,29 @@ static void do_free_tracenode_record (struct Tracenode *tracenode) {
 }
 
 /*
- * Try to free a tracenode, if it have no child and have no memory info, then free it
+ * Free/update the parents of a tracenode according to need
  */
-static void free_tracenode(struct Tracenode* tracenode) {
+static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 	struct Tracenode *parent;
+
 	while (tracenode) {
 		parent = tracenode->parent;
 
-		if (!parent) {
-			// It's a task
-			return;
+		if (tracenode->record) {
+			tracenode->record->pages_alloc -= nr_pages;
+
+			if (is_trivial_record(tracenode->record))
+				free_tracenode_record(tracenode);
+		} else {
+			if (!page_free_always_backtrack)
+				break;
 		}
 
-		if (tracenode->children) {
-			if (tracenode->record) {
-				do_free_tracenode_record(tracenode);
-			}
-		} else {
+		if (is_trivial_tracenode(tracenode) && parent) {
 			struct TreeNode *tree_root = &parent->children->node;
 			get_remove_tree_node(&tree_root, tracenode->key, compTracenode);
 
+			// TODO: This tree looks ugly
 			if (tree_root) {
 				parent->children = container_of(tree_root, struct Tracenode, node);
 			} else {
@@ -221,6 +226,7 @@ static void free_tracenode(struct Tracenode* tracenode) {
 
 		tracenode = parent;
 	}
+
 }
 
 /*
@@ -259,38 +265,31 @@ static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigne
  */
 static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 	struct Tracenode *tracenode, *last = NULL;
+	unsigned long pages;
 
 	if (pfn > max_pfn) {
 		log_error ("BUG: free pfn %lu out of max_pfn %lu\n", pfn, max_pfn);
 		return;
 	}
 
-	while (nr_pages--) {
+	page_free_counter += nr_pages;
+	pages = nr_pages;
+	while (pages--) {
 		tracenode = page_map[pfn].tracenode;
 
-		if (last != tracenode) {
-			if (last) {
-				if (is_trivial_tracenode(last))
-					free_tracenode(last);
-				last = NULL;
-			}
+		if (last != tracenode && last) {
+			do_record_page_free(last, nr_pages);
+			last = NULL;
 		}
 
-		if (tracenode) {
+		if (tracenode)
 			last = tracenode;
-			while (tracenode && tracenode->record) {
-				tracenode->record->pages_alloc--;
-				tracenode = tracenode->parent;
-			}
-			page_free_counter++;
-		}
 
 		page_map[pfn++].tracenode = NULL;
 	}
 
-	if (last && is_trivial_tracenode(last)) {
-		free_tracenode(last);
-	}
+	if (last)
+		do_record_page_free(last, nr_pages);
 }
 
 static void do_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
@@ -576,7 +575,7 @@ void for_each_tracenode(
 
 void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
 	if (tracenode->record && tracenode->children) {
-		do_free_tracenode_record(tracenode);
+		free_tracenode_record(tracenode);
 		for_each_tracenode(tracenode->children, do_depopulate_tracenode, NULL);
 	}
 }
