@@ -97,7 +97,7 @@ int perf_handling_clean() {
 }
 
 int perf_handling_start() {
-	int err;
+	int err = 0;
 	for (int i = 0; i < perf_event_ring_num; i++) {
 		err = perf_ring_start_sampling(perf_event_rings + i);
 		if (err) {
