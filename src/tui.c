@@ -84,6 +84,9 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 	int count, ret = 0;
 	char expand_sym;
 
+	if (!node->record)
+		return ret;
+
 	if (!node->record->blob)
 		node->record->blob = calloc(1, sizeof(struct TracenodeView));
 
@@ -146,8 +149,12 @@ static int try_extend_tracenode(struct Tracenode *node, int is_task) {
 	struct TracenodeView *view;
 	int count, ret = 0;
 
+	if (!node->record)
+		return ret;
+
 	if (!node->record->blob)
 		node->record->blob = calloc(1, sizeof(struct TracenodeView));
+
 	view = node->record->blob;
 
 	if (info->current++ == line_highlight) {
