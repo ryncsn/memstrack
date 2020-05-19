@@ -92,7 +92,7 @@ static struct Tracenode* __process_stacktrace(
 		struct Task *task, struct PageEvent *event)
 {
 	if (task->module_loading) {
-		__process_stacktrace_mod(callchain, task, event, task->module_loading);
+		return __process_stacktrace_mod(callchain, task, event, task->module_loading);
 	}
 
 	struct Tracenode *tp = to_tracenode(task);
