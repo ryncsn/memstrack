@@ -165,8 +165,10 @@ void insert_tree_node(
 	struct TreeNode *root = *root_p;
 	int result;
 
-	if (root == NULL)
+	if (root == NULL) {
 		*root_p = src;
+		return;
+	}
 
 	while (1) {
 		result = comp(root, key);

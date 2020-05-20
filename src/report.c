@@ -32,7 +32,7 @@ static void report_module_summary(void) {
 
 	for (int i = 0; i < module_map.size; ++i) {
 		log_info(
-				"Module %s using %.1lfMB (%d pages), peak allocation %.1lfMB (%d pages)\n",
+				"Module %s using %.1lfMB (%ld pages), peak allocation %.1lfMB (%ld pages)\n",
 				modules[i]->name,
 				modules[i]->tracenode.record->pages_alloc * ((double)page_size) / 1024 / 1024,
 				modules[i]->tracenode.record->pages_alloc,
@@ -66,7 +66,7 @@ static void report_task_summary (void) {
 	tasks = collect_tasks_sorted(0);
 	for (int i = 0; i < task_map.size; ++i) {
 		log_info(
-				"Task %s (%u) using %u pages, peak usage %u pages\n",
+				"Task %s (%ld) using %ld pages, peak usage %ld pages\n",
 				tasks[i]->task_name, tasks[i]->pid,
 				tasks[i]->tracenode.record->pages_alloc,
 				tasks[i]->tracenode.record->pages_alloc_peak);

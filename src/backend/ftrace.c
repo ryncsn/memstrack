@@ -43,6 +43,10 @@ static void set_trace(const char* value, const char* path) {
 	char filename[FTRACE_MAX_PATH];
 	sprintf(filename, "%s/%s", TRACE_BASE, path);
 	FILE *file = fopen(filename, "w");
+	if (!file) {
+		log_error("Failed to open %s\n", filename);
+		return;
+	}
 	fprintf(file, "%s", value);
 	fclose(file);
 }
@@ -116,7 +120,7 @@ static struct Tracenode* __process_stacktrace() {
 	int callsite_len = 0;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
 	callsite_len = strlen(callsite_arg);
-	strcpy(callsite, callsite_arg);
+	strncpy(callsite, callsite_arg, MAX_SYMBOL);
 	callsite[callsite_len - 1] = '\0';
 
 	// Process next traceline
@@ -219,6 +223,7 @@ static void do_ftrace_process() {
 		last = pre_last;
 		pre_last = NULL;
 	}
+
 	if (strncmp(last + 2, FTRACE_STACK_TRACE_EVENT, strlen(FTRACE_STACK_TRACE_EVENT) - 1) == 0) {
 		if (!task) {
 			log_debug("Got unexpected stacktrace!\n");
@@ -240,6 +245,11 @@ static void do_ftrace_process() {
 		event_info = pre_last;
 		pid_arg = pre_last;
 
+		if (!task_info || !event_info || !pid_arg) {
+			log_warn("Invalid line:\n%s\n", ftrace_line);
+			return;
+		}
+
 		while(pid_arg[0] != '-') {
 			pid_arg --;
 			if (pid_arg <= ftrace_line) {
@@ -252,6 +262,9 @@ static void do_ftrace_process() {
 			pid_arg[0] = '\0';
 			pid_arg++;
 			sscanf(pid_arg, "%u", &pid);
+		} else {
+			log_warn("Invalid line:\n%s\n", ftrace_line);
+			return;
 		}
 
 		event_info[0] = '\0';
@@ -259,11 +272,6 @@ static void do_ftrace_process() {
 
 		while(task_info[0] == ' ' || task_info[0] == '\t') {
 			task_info++;
-		}
-
-		if (!task_info || !event_info || !pid_arg) {
-			log_warn("Invalid line:\n%s\n", ftrace_line);
-			return;
 		}
 
 		// char *event, *callsite;

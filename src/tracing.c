@@ -117,6 +117,9 @@ static char* get_process_name_by_pid(const int pid)
 		size = fread(buf, sizeof(char), TASK_NAME_LEN_MAX, f);
 		if (size > 0){
 			buf[size - 1] = '\0';
+		} else {
+			// TODO: empty name?
+			buf[0] = '\0';
 		}
 		fclose(f);
 	} else {
@@ -294,6 +297,10 @@ static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
 
 static void do_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
 	if (pevent->pages_alloc > 0) {
+		if (!tracenode) {
+			log_debug("BUG: Page alloc event with NULL tracenode\n");
+			return;
+		}
 		record_page_alloc(tracenode, pevent->pfn, pevent->pages_alloc);
 	} else if (pevent->pages_alloc < 0) {
 		record_page_free(pevent->pfn, 0 - pevent->pages_alloc);
@@ -426,6 +433,11 @@ void load_kallsyms() {
 
 	FILE *proc_kallsyms = fopen("/proc/kallsyms", "r");
 	char read_buf[4096];
+
+	if (!proc_kallsyms) {
+		log_error("Failed to open /proc/kallsyms\n");
+		return;
+	}
 
 	while(fgets(read_buf, 4096, proc_kallsyms)) {
 		unsigned long long addr;
@@ -674,10 +686,15 @@ struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *count,
 	struct Tracenode **nodes, **tail;
 
 	*count = count_tracenodes(root);
-	tail = nodes = malloc(*count * sizeof(struct Tracenode*));
+	tail = nodes = calloc(*count * sizeof(struct Tracenode*), 1);
 	for_each_tracenode(root, tracenode_iter_collect, &tail);
 
 	for (int i = 0; i < *count; ++i) {
+		if (!nodes[i]) {
+			*count = i;
+			break;
+		}
+
 		if (shallow)
 			populate_tracenode_shallow(nodes[i]);
 		else
@@ -742,8 +759,8 @@ void print_tracenode_json(struct Tracenode* tracenode, void *blob) {
 	}
 	log_info("%s\"%s\": ", padding, get_tracenode_symbol(tracenode));
 	log_info("{\n");
-	log_info("%s \"pages_alloc\": %d", padding, tracenode->record->pages_alloc);
-	log_info(",\n%s \"pages_alloc_peak\": %d", padding, tracenode->record->pages_alloc_peak);
+	log_info("%s \"pages_alloc\": %ld", padding, tracenode->record->pages_alloc);
+	log_info(",\n%s \"pages_alloc_peak\": %ld", padding, tracenode->record->pages_alloc_peak);
 
 	if (tracenode->children) {
 		log_info(",\n%s \"tracenodes\": {\n", padding);
@@ -768,9 +785,9 @@ void print_task_json(struct Task* task) {
 
 	log_info(" {\n");
 	log_info("  \"task_name\": \"%s\",\n", task->task_name);
-	log_info("  \"pid\" :\"%d\",\n", task->pid);
-	log_info("  \"pages_alloc\": %d,\n", task->tracenode.record->pages_alloc);
-	log_info("  \"pages_alloc_peak\": %d,\n", task->tracenode.record->pages_alloc_peak);
+	log_info("  \"pid\" :\"%ld\",\n", task->pid);
+	log_info("  \"pages_alloc\": %ld,\n", task->tracenode.record->pages_alloc);
+	log_info("  \"pages_alloc_peak\": %ld,\n", task->tracenode.record->pages_alloc_peak);
 	log_info("  \"tracenodes\": {\n");
 	if(to_tracenode(task)->children) {
 		nodes = collect_tracenodes_sorted(to_tracenode(task)->children, &counter, 1);
@@ -792,18 +809,17 @@ void print_tracenode(struct Tracenode* tracenode, int current_indent, int substa
 
 	log_info("%s", get_tracenode_symbol(tracenode));
 
-	log_info(" Pages: %d (peak: %d)\n",
+	log_info(" Pages: %ld (peak: %ld)\n",
 			tracenode->record->pages_alloc,
 			tracenode->record->pages_alloc_peak);
 
 	if (m_sort_peak)
 		page_limit = tracenode->record->pages_alloc_peak;
-	else if (m_sort_alloc)
+	else
 		page_limit = tracenode->record->pages_alloc;
 
-	if (throttle) {
+	if (throttle)
 		page_limit = page_limit * throttle / 100;
-	}
 
 	if (tracenode->children) {
 		struct Tracenode **nodes;
@@ -827,7 +843,7 @@ void print_task(struct Task* task) {
 	struct Tracenode **nodes;
 
 	indent = 2;
-	log_info("%s Pages: %d (peak: %d)\n",
+	log_info("%s Pages: %ld (peak: %ld)\n",
 			task->task_name,
 			tn->record->pages_alloc,
 			tn->record->pages_alloc_peak);

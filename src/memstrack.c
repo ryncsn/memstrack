@@ -215,9 +215,7 @@ static void init_fds(void) {
 }
 
 static void loop(void) {
-	int ret;
-
-	switch (ret = poll(m_pollfds, m_pollfd_num, 250)) {
+	switch (poll(m_pollfds, m_pollfd_num, 250)) {
 		// Resizing the terminal causes poll() to return -1
 		case -1:
 		default:

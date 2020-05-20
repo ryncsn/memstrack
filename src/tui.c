@@ -138,6 +138,7 @@ static void trace_refresh_tui() {
 
 	info = &line_info;
 
+	// TODO: only work when it's single thread
 	for (int task_n = 0; task_n < tasks_num; ++task_n) {
 		if (tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0))
 			return;
@@ -272,6 +273,7 @@ void tui_init(void) {
 
 void tui_update(void) {
 	int ch;
+	int ret;
 
 	if (ui_fds[0].revents & POLLIN) {
 		/* On UI event */
@@ -306,7 +308,8 @@ void tui_update(void) {
 
 	if (ui_fds[1].revents & POLLIN) {
 		uint64_t time;
-		read(ui_fds[1].fd, &time, sizeof(time));
-		update_ui(trace_win);
+		ret = read(ui_fds[1].fd, &time, sizeof(time));
+		if (ret)
+			update_ui(trace_win);
 	}
 }

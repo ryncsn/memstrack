@@ -137,7 +137,8 @@ int perf_do_load_event_info(struct PerfEvent *event)
 		}
 	} else {
 		log_error("Failed to verify event name of %s\n", event->name);
-		return 1;
+		ret = 1;
+		goto out;
 	}
 
 	fgets(fmt_buffer, 1024, fmt_file);

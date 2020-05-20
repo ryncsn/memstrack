@@ -110,6 +110,7 @@ int print_slab_usage()
 		log_info("%17s: %.1lf MB\n", entry->name, size_in_mb);
 	}
 
+	fclose(file);
 	return 0;
 }
 
@@ -167,23 +168,23 @@ int parse_zone_info(struct zone_info **zone)
 		strncpy((*zone)->name, zone_name, ZONENAMELEN);
 
 		log_debug("Trying to parse node %d zone %s\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
-		if (parse_keyword(1, file, line, "free", "Node", "free %d", &(*zone)->free))
+		if (parse_keyword(1, file, line, "free", "Node", "free %lu", &(*zone)->free))
 			continue;
-		if (parse_keyword(0, file, line, "min", NULL, "min %d", &(*zone)->min))
+		if (parse_keyword(0, file, line, "min", NULL, "min %lu", &(*zone)->min))
 			continue;
-		if (parse_keyword(0, file, line, "low", NULL, "low %d", &(*zone)->low))
+		if (parse_keyword(0, file, line, "low", NULL, "low %lu", &(*zone)->low))
 			continue;
-		if (parse_keyword(0, file, line, "high", NULL, "low %d", &(*zone)->high))
+		if (parse_keyword(0, file, line, "high", NULL, "low %lu", &(*zone)->high))
 			continue;
-		if (parse_keyword(0, file, line, "spanned", NULL, "spanned %d", &(*zone)->spanned))
+		if (parse_keyword(0, file, line, "spanned", NULL, "spanned %lu", &(*zone)->spanned))
 			continue;
-		if (parse_keyword(0, file, line, "present", NULL, "present %d", &(*zone)->present))
+		if (parse_keyword(0, file, line, "present", NULL, "present %lu", &(*zone)->present))
 			continue;
-		if (parse_keyword(0, file, line, "managed", NULL, "managed %d", &(*zone)->managed))
+		if (parse_keyword(0, file, line, "managed", NULL, "managed %lu", &(*zone)->managed))
 			continue;
-		if (parse_keyword(1, file, line, "start_pfn", "Node", "start_pfn: %d", &(*zone)->start_pfn))
+		if (parse_keyword(1, file, line, "start_pfn", "Node", "start_pfn: %lu", &(*zone)->start_pfn))
 			continue;
-		log_debug("Page span is start: %d, spanned %d\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
+		log_debug("Page span is start: %lu, spanned %lu\n", (*zone)->start_pfn, (*zone)->spanned);
 
 		zone = &(*zone)->next_zone;
 	}
