@@ -46,3 +46,5 @@ extern int m_log (int level, const char *__restrict __fmt, ...);
 #define log_error(...) m_log(LOG_LVL_ERROR, __VA_ARGS__)
 
 extern void m_exit (int val);
+
+#define SIZE_MB (1024 * 1024)

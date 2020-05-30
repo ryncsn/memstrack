@@ -972,8 +972,8 @@ static int comp_module_mem(const void *x, const void *y) {
 	}
 }
 
-// TODO: shallow is ignored
-struct Module **collect_modules_sorted() {
+struct Module **collect_modules_sorted(int shallow) {
+
 	struct Task *task;
 	struct HashNode *hnode;
 	struct Module **modules;

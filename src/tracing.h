@@ -118,7 +118,7 @@ struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);
 struct Task* get_or_new_task(char* task_name, int pid);
 struct Task **collect_tasks_sorted(int shallow);
-struct Module **collect_modules_sorted();
+struct Module **collect_modules_sorted(int shallow);
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 struct Module *get_or_new_module(char *name);
 

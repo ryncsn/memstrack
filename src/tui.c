@@ -34,7 +34,7 @@
 #define MAX_TASK_VIEW 64
 #define MAX_CALLSITE_VIEW 64
 #define MISC_PAD 4
-// Show 300 lines
+// Show 300 lines at most
 #define MAX_VIEW 300
 #define UI_FD_NUMS 2
 
@@ -44,15 +44,75 @@ struct TracenodeView {
 	bool expended;
 };
 
-static struct pollfd *ui_fds;
+static enum ui_type {
+	UI_TYPE_TASK = 0,
+	UI_TYPE_MODULE,
+	UI_TYPE_MAX
+} ui_type;
 
-static WINDOW *trace_win;
+static struct pollfd *ui_fds;
+static int gen_timerfd(unsigned int period)
+{
+	int fd;
+	unsigned int ns;
+	unsigned int sec;
+	struct itimerspec itval = {0};
+
+	fd = timerfd_create(CLOCK_MONOTONIC, 0);
+	if (fd < 0) {
+		log_error("Failed creating timer");
+		return -1;
+	}
+
+	/* Make the timer periodic */
+	sec = period / 1000000;
+	ns = (period - (sec * 1000000)) * 1000;
+	itval.it_interval.tv_sec = sec;
+	itval.it_interval.tv_nsec = ns;
+	itval.it_value.tv_sec = sec;
+	itval.it_value.tv_nsec = ns;
+
+	if (timerfd_settime(fd, 0, &itval, NULL)) {
+		log_error("Failed setting timer period.kn");
+		return -1;
+	}
+
+	return fd;
+}
+
+void tui_apply_fds(struct pollfd *fds) {
+	fds[0].fd = STDIN_FILENO;
+	fds[0].events = POLLIN;
+
+	fds[1].fd = gen_timerfd(1000 * 1000);
+	fds[1].events = POLLIN;
+
+	ui_fds = fds;
+}
 
 static struct Task **sorted_tasks;
 static int tasks_num;
+
+static struct Module **sorted_modules;
+static int module_num;
+
 static void update_top_tasks() {
 	if (sorted_tasks)
 		free(sorted_tasks);
+
+	// TODO: No need to free / alloc every time
+	sorted_tasks = collect_tasks_sorted(1);
+	tasks_num = task_map.size;
+
+	for (int i = 0; i < tasks_num; ++i) {
+		if (!to_tracenode(sorted_tasks[i])->record->blob)
+			to_tracenode(sorted_tasks[i])->record->blob = calloc(1, sizeof(struct TracenodeView));
+	}
+};
+
+static void update_top_modules() {
+	if (sorted_modules)
+		free(sorted_modules);
 
 	// TODO: No need to free / alloc every time
 	sorted_tasks = collect_tasks_sorted(1);
@@ -69,6 +129,7 @@ static void update_top_tasks() {
  * TODO: Use a window properly
  */
 static int line_highlight;
+static WINDOW *trace_win;
 
 struct line_info {
 	int offset;
@@ -130,21 +191,6 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 	return ret;
 }
 
-static void trace_refresh_tui() {
-	struct line_info line_info;
-	line_info.current = 0;
-	line_info.limit = LINES - MISC_PAD - 4;
-	line_info.offset = MISC_PAD + 1;
-
-	info = &line_info;
-
-	// TODO: only work when it's single thread
-	for (int task_n = 0; task_n < tasks_num; ++task_n) {
-		if (tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0))
-			return;
-	}
-}
-
 static int try_extend_tracenode(struct Tracenode *node, int is_task) {
 	struct Tracenode** nodes;
 	struct TracenodeView *view;
@@ -193,66 +239,75 @@ static void expend_line(int line) {
 		if (try_extend_tracenode(to_tracenode(sorted_tasks[task_n]), 1))
 			break;
 	}
-
-	trace_refresh_tui();
 }
 
+static void update_task_ui(WINDOW *trace_win) {
+	struct line_info line_info;
 
-static int gen_timerfd(unsigned int period)
-{
-	int fd;
-	unsigned int ns;
-	unsigned int sec;
-	struct itimerspec itval = {0};
+	update_top_tasks();
 
-	fd = timerfd_create(CLOCK_MONOTONIC, 0);
-	if (fd < 0) {
-		log_error("Failed creating timer");
-		return -1;
+	line_info.current = 0;
+	line_info.limit = LINES - MISC_PAD - 4;
+	line_info.offset = MISC_PAD + 1;
+
+	info = &line_info;
+
+	// TODO: only work when it's single thread
+	for (int task_n = 0; task_n < tasks_num; ++task_n) {
+		if (tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0))
+			return;
 	}
+}
 
-	/* Make the timer periodic */
-	sec = period / 1000000;
-	ns = (period - (sec * 1000000)) * 1000;
-	itval.it_interval.tv_sec = sec;
-	itval.it_interval.tv_nsec = ns;
-	itval.it_value.tv_sec = sec;
-	itval.it_value.tv_nsec = ns;
+static void update_module_ui(WINDOW *trace_win) {
+	struct line_info line_info;
 
-	if (timerfd_settime(fd, 0, &itval, NULL)) {
-		log_error("Failed setting timer period.kn");
-		return -1;
+	update_top_tasks();
+
+	line_info.current = 0;
+	line_info.limit = LINES - MISC_PAD - 4;
+	line_info.offset = MISC_PAD + 1;
+
+	info = &line_info;
+
+	// TODO: only work when it's single thread
+	for (int task_n = 0; task_n < tasks_num; ++task_n) {
+		if (tui_print_tracenode(to_tracenode(sorted_tasks[task_n]), 0))
+			return;
 	}
-
-	return fd;
 }
 
 static void update_ui(WINDOW *trace_win) {
 	mvprintw(0, 0,  "'q' to quit, 'r' to reload symbols\n");
 	mvprintw(1, 0, "Trace counter: %lu\n", trace_count);
-	mvprintw(2, 0, "Total pages allocated: %lu\n", page_alloc_counter);
-	mvprintw(3, 0, "Total pages Freed: %lu\n", page_free_counter);
+	mvprintw(2, 0, "Total allocated: %luMB\n", page_alloc_counter * page_size / SIZE_MB);
+	mvprintw(3, 0, "Total Freed: %luMB\n", page_free_counter * page_size / SIZE_MB);
 
-	update_top_tasks();
-	trace_refresh_tui();
-	wrefresh(trace_win);
-	box(trace_win, 0, 0);
+	if (ui_type == UI_TYPE_TASK)
+		update_task_ui(trace_win);
+	else
+		update_module_ui(trace_win);
+
 	refresh();
+	wrefresh(trace_win);
 }
 
-void tui_apply_fds(struct pollfd *fds) {
-	fds[0].fd = STDIN_FILENO;
-	fds[0].events = POLLIN;
+void tui_update_size(void) {
+	int win_startx, win_starty, win_width, win_height;
 
-	fds[1].fd = gen_timerfd(1000 * 1000);
-	fds[1].events = POLLIN;
+	win_height = LINES - MISC_PAD; // 4 line above for info
+	win_width = COLS;
+	win_starty = MISC_PAD;
+	win_startx = 0;
 
-	ui_fds = fds;
+	if (trace_win)
+		delwin(trace_win);
+
+	trace_win = newwin(win_height, win_width, win_starty, win_startx);
+	box(trace_win, 0, 0);
 }
 
 void tui_init(void) {
-	int win_startx, win_starty, win_width, win_height;
-
 	load_kallsyms();
 	initscr();
 	keypad(stdscr, TRUE);
@@ -261,17 +316,12 @@ void tui_init(void) {
 	noecho();
 	raw();
 
-	win_height = LINES - MISC_PAD; // 4 line above for info
-	win_width = COLS;
-	win_starty = MISC_PAD;
-	win_startx = 0;
-
-	trace_win = newwin(win_height, win_width, win_starty, win_startx);
+	tui_update_size();
 
 	need_page_free_always_backtrack();
 }
 
-void tui_update(void) {
+void tui_loop(void) {
 	int ch;
 	int ret;
 
@@ -282,6 +332,12 @@ void tui_update(void) {
 			case 'q':
 				endwin();
 				m_exit(0);
+				return;
+
+			case 'm':
+				ui_type++;
+				if (ui_type >= UI_TYPE_MAX)
+					ui_type = 0;
 				return;
 
 			case 'r':
@@ -303,6 +359,7 @@ void tui_update(void) {
 				if (line_highlight > LINES - MISC_PAD)
 					line_highlight = LINES - MISC_PAD;
 		}
+
 		update_ui(trace_win);
 	}
 

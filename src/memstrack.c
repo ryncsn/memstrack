@@ -226,7 +226,7 @@ static void loop(void) {
 			}
 
 			if (!m_notui)
-				tui_update();
+				tui_loop();
 	}
 }
 
