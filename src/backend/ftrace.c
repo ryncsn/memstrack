@@ -117,11 +117,9 @@ static struct Tracenode* __process_stacktrace() {
 
 	struct Tracenode *tp = NULL;
 	char callsite[MAX_SYMBOL], *callsite_arg = NULL;
-	int callsite_len = 0;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
-	callsite_len = strlen(callsite_arg);
 	strncpy(callsite, callsite_arg, MAX_SYMBOL);
-	callsite[callsite_len - 1] = '\0';
+	callsite[MAX_SYMBOL - 1] = '\0';
 
 	// Process next traceline
 	tp = __process_stacktrace();
