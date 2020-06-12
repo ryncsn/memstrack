@@ -972,23 +972,28 @@ static int comp_module_mem(const void *x, const void *y) {
 	}
 }
 
+// With shallow = 1, only module memory usage during module initializing is counted
 struct Module **collect_modules_sorted(int shallow) {
-
 	struct Task *task;
 	struct HashNode *hnode;
 	struct Module **modules;
 	int i = 0;
 
-	for_each_hnode(&task_map, hnode) {
-		task = container_of(hnode, struct Task, node);
-		if (to_tracenode(task)->children)
-			for_each_tracenode(to_tracenode(task)->children, do_gather_tracenodes_by_module, NULL);
+	if (!shallow) {
+		for_each_hnode(&task_map, hnode) {
+			task = container_of(hnode, struct Task, node);
+			if (to_tracenode(task)->children)
+				for_each_tracenode(to_tracenode(task)->children, do_gather_tracenodes_by_module, NULL);
+		}
 	}
 
 	modules = malloc(module_map.size * sizeof(struct Module*));
 	for_each_hnode(&module_map, hnode) {
 		modules[i] = container_of(hnode, struct Module, node);
-		populate_tracenode(&modules[i]->tracenode);
+		if (shallow)
+			populate_tracenode_shallow(&modules[i]->tracenode);
+		else
+			populate_tracenode(&modules[i]->tracenode);
 		i++;
 	}
 

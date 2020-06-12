@@ -20,7 +20,7 @@
 #include "utils.h"
 #ifndef _MEMORY_TRACER_TRACING_LIB
 
-#define to_tracenode(task_p) (&task_p->tracenode)
+#define to_tracenode(task_or_module_p) (&task_or_module_p->tracenode)
 #define is_task(tracenode_p) (tracenode_p->parent == NULL)
 #define is_stacktop(tracenode_p) (tracenode_p->children == NULL)
 // TODO: Remove redundant record, and when alloc happened extending a stacktop, remove old record and inherit.
@@ -58,18 +58,18 @@ struct Tracenode {
 };
 
 struct Task {
-	struct HashNode node;
 	struct Tracenode tracenode;
+	struct HashNode node;
 
-	// TODO: Distinguish exited task, loop pid
+	// TODO: Distinguish exited task
 	long pid;
 	char *task_name;
 	char *module_loading;
 };
 
 struct Module {
-	struct HashNode node;
 	struct Tracenode tracenode;
+	struct HashNode node;
 
 	char *name;
 	unsigned int pages;
