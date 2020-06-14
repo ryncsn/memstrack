@@ -135,7 +135,7 @@ static char* get_process_name_by_pid(const int pid)
 
 void mem_tracing_init() {
 	// unsigned long total_pages;
-	struct zone_info *zone, *prev;
+	struct zone_info *zone, *tmp;
 
 	// total_pages = sysconf(_SC_PHYS_PAGES);
 	parse_zone_info(&zone);
@@ -151,9 +151,9 @@ void mem_tracing_init() {
 		if (start_pfn > zone->min)
 			start_pfn = zone->min;
 
-		prev = zone;
+		tmp = zone;
 		zone = zone->next_zone;
-		free(prev);
+		free(tmp);
 	}
 
 	log_debug("max_pfn is %lu\n", max_pfn);

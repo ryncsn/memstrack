@@ -168,22 +168,22 @@ int parse_zone_info(struct zone_info **zone)
 		strncpy((*zone)->name, zone_name, ZONENAMELEN);
 
 		log_debug("Trying to parse node %d zone %s\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
-		if (parse_keyword(1, file, line, "free", "Node", "free %lu", &(*zone)->free))
+
+		if (
+			parse_keyword(1, file, line, "free", "Node", "free %lu", &(*zone)->free) ||
+			parse_keyword(0, file, line, "min", NULL, "min %lu", &(*zone)->min) ||
+			parse_keyword(0, file, line, "low", NULL, "low %lu", &(*zone)->low) ||
+			parse_keyword(0, file, line, "high", NULL, "low %lu", &(*zone)->high) ||
+			parse_keyword(0, file, line, "spanned", NULL, "spanned %lu", &(*zone)->spanned) ||
+			parse_keyword(0, file, line, "present", NULL, "present %lu", &(*zone)->present) ||
+			parse_keyword(0, file, line, "managed", NULL, "managed %lu", &(*zone)->managed) ||
+			parse_keyword(1, file, line, "start_pfn", "Node", "start_pfn: %lu", &(*zone)->start_pfn)
+		) {
+			free(*zone);
+			*zone = NULL;
 			continue;
-		if (parse_keyword(0, file, line, "min", NULL, "min %lu", &(*zone)->min))
-			continue;
-		if (parse_keyword(0, file, line, "low", NULL, "low %lu", &(*zone)->low))
-			continue;
-		if (parse_keyword(0, file, line, "high", NULL, "low %lu", &(*zone)->high))
-			continue;
-		if (parse_keyword(0, file, line, "spanned", NULL, "spanned %lu", &(*zone)->spanned))
-			continue;
-		if (parse_keyword(0, file, line, "present", NULL, "present %lu", &(*zone)->present))
-			continue;
-		if (parse_keyword(0, file, line, "managed", NULL, "managed %lu", &(*zone)->managed))
-			continue;
-		if (parse_keyword(1, file, line, "start_pfn", "Node", "start_pfn: %lu", &(*zone)->start_pfn))
-			continue;
+		}
+
 		log_debug("Page span is start: %lu, spanned %lu\n", (*zone)->start_pfn, (*zone)->spanned);
 
 		zone = &(*zone)->next_zone;
