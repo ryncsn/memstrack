@@ -27,7 +27,6 @@
 #include "tracing.h"
 #include "proc.h"
 
-#define TASK_NAME_LEN_MAX 1024
 #define PID_LEN_MAX 6
 
 unsigned long page_alloc_counter, page_free_counter;
@@ -106,28 +105,32 @@ int symbol_table_len;
 
 static char* get_process_name_by_pid(const int pid)
 {
-	char fname_buf[sizeof("/proc//cmdline") + 6];
-	char buf[TASK_NAME_LEN_MAX];
+	char fname_pid_buf[sizeof("/proc//cmdline") + 20 + 1];
+	char *buf = NULL;
 	FILE *f;
 
-	sprintf(fname_buf, "/proc/%d/cmdline", pid);
-	f = fopen(fname_buf,"r");
+	snprintf(fname_pid_buf, sizeof(fname_pid_buf), "/proc/%d/cmdline", pid);
+	f = fopen(fname_pid_buf,"r");
 	if (f) {
-		size_t size;
-		size = fread(buf, sizeof(char), TASK_NAME_LEN_MAX, f);
-		if (size > 0){
-			buf[size - 1] = '\0';
-		} else {
-			// TODO: empty name?
-			buf[0] = '\0';
-		}
+		size_t len;
+		ssize_t read;
+		read = getline(&buf, &len, f);
 		fclose(f);
-	} else {
-		log_debug("Failed to retrive process name of %d\n", pid);
-		sprintf(buf, "(%d)", pid);
+
+		if (read > 0){
+			return buf;
+		}
 	}
 
-	return strdup(buf);
+	if (buf) {
+		free(buf);
+		buf = NULL;
+	}
+
+	log_debug("Failed to retrive process name of %d\n", pid);
+	sprintf(fname_pid_buf, "(%d)", pid);
+
+	return strdup(fname_pid_buf);
 }
 
 void mem_tracing_init() {
