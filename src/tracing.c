@@ -94,12 +94,14 @@ HASH_MAP(hash_task, comp_task, task_map);
 
 struct PageRecord *page_map;
 
-static struct symbol {
+struct Symbol {
 	trace_addr_t addr;
 	char type;
 	char* module_name;
 	char* sym_name;
-} *symbol_table;
+};
+
+static struct Symbol *symbol_table;
 
 int symbol_table_len;
 
@@ -415,23 +417,30 @@ struct json_marker {
 };
 
 static int comp_symbol(const void *x, const void *y) {
-	struct symbol *sa = (struct symbol*)x;
-	struct symbol *sb = (struct symbol*)y;
+	struct Symbol *sa = (struct Symbol*)x;
+	struct Symbol *sb = (struct Symbol*)y;
 
 	return (sa->addr - sb->addr);
 }
 
 void load_kallsyms() {
-	struct symbol_buf {
-		struct symbol symbol;
-		struct symbol_buf *next;
+	struct Symbol_buf {
+		struct Symbol symbol;
+		struct Symbol_buf *next;
 	} *symbol_buf_head, **sym_buf_tail_p, *symbol_buf_tmp;
 
 	sym_buf_tail_p = &symbol_buf_head;
-	symbol_table_len = 0;
+
 	if (symbol_table) {
+		for (int i = 0; i < symbol_table_len; ++i) {
+			if (symbol_table[i].module_name)
+				free(symbol_table[i].module_name);
+			free(symbol_table[i].sym_name);
+		}
 		free(symbol_table);
+
 		symbol_table = NULL;
+		symbol_table_len = 0;
 	}
 
 	FILE *proc_kallsyms = fopen("/proc/kallsyms", "r");
@@ -449,7 +458,7 @@ void load_kallsyms() {
 		char *symbol_arg = strtok(NULL, " \t");
 		char *module_arg = strtok(NULL, " \t");
 
-		struct symbol_buf *symbol = malloc(sizeof(struct symbol_buf));
+		struct Symbol_buf *symbol = malloc(sizeof(struct Symbol_buf));
 		if (module_arg) {
 			module_arg[strlen(module_arg) - 1] = '\0';
 			module_arg[strlen(module_arg) - 1] = '\0';
@@ -472,21 +481,23 @@ void load_kallsyms() {
 
 	fclose(proc_kallsyms);
 
-	symbol_table = malloc(sizeof(struct symbol) * symbol_table_len);
+	symbol_table = malloc(sizeof(struct Symbol) * symbol_table_len);
+
 	for (int i = 0; i < symbol_table_len; ++i) {
 		symbol_table[i].addr = symbol_buf_head->symbol.addr;
 		symbol_table[i].module_name = symbol_buf_head->symbol.module_name;
 		symbol_table[i].sym_name = symbol_buf_head->symbol.sym_name;
 		symbol_table[i].type = symbol_buf_head->symbol.type;
-		symbol_buf_tmp = symbol_buf_head->next;
-		free(symbol_buf_head);
-		symbol_buf_head = symbol_buf_tmp;
+		symbol_buf_tmp = symbol_buf_head;
+		symbol_buf_head = symbol_buf_head->next;
+
+		free(symbol_buf_tmp);
 	}
 
-	qsort((void*)symbol_table, symbol_table_len, sizeof(struct symbol), comp_symbol);
+	qsort((void*)symbol_table, symbol_table_len, sizeof(struct Symbol), comp_symbol);
 }
 
-static struct symbol* kaddr_to_symbol(trace_addr_t addr) {
+static struct Symbol* kaddr_to_symbol(trace_addr_t addr) {
 	int left = 0, right = symbol_table_len, mid;
 
 	do {
@@ -511,7 +522,7 @@ static struct symbol* kaddr_to_symbol(trace_addr_t addr) {
 char* kaddr_to_module(trace_addr_t addr) {
 	static char *buffer;
 
-	struct symbol *sym = kaddr_to_symbol(addr);
+	struct Symbol *sym = kaddr_to_symbol(addr);
 
 	if (buffer) {
 		free(buffer);
@@ -527,7 +538,7 @@ char* kaddr_to_module(trace_addr_t addr) {
 char* kaddr_to_sym(trace_addr_t addr) {
 	static char *buffer;
 
-	struct symbol *sym = kaddr_to_symbol(addr);
+	struct Symbol *sym = kaddr_to_symbol(addr);
 
 	if (buffer) {
 		free(buffer);
