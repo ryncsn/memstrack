@@ -295,7 +295,7 @@ int tui_update_size(void) {
 	trace_win = newwin(win_height, win_width, win_starty, win_startx);
 
 	tui_info.line_len = COLS - 3;
-	tui_info.line_buf = malloc(tui_info.line_len);
+	tui_info.line_buf = malloc(tui_info.line_len + 1);
 
 	tui_info.limit = LINES - MISC_PAD - 4;
 	tui_info.offset = MISC_PAD + 1;
