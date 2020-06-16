@@ -173,7 +173,7 @@ static int compTracenode(const struct TreeNode *root, const void *key) {
 	}
 }
 
-static int is_trivial_record(struct Record *record) {
+static int is_droppable_record(struct Record *record) {
 	if (record->pages_alloc == 0 && record->pages_alloc_peak < trivial_peak_limit) {
 		return 1;
 	}
@@ -181,12 +181,12 @@ static int is_trivial_record(struct Record *record) {
 	return 0;
 }
 
-static int is_trivial_tracenode(struct Tracenode *node) {
+static int is_droppable_tracenode(struct Tracenode *node) {
 	if (node->children)
 		return 0;
 
 	if (node->record)
-		return is_trivial_record(node->record);
+		return is_droppable_record(node->record);
 
 	return 1;
 }
@@ -212,14 +212,14 @@ static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 		if (tracenode->record) {
 			tracenode->record->pages_alloc -= nr_pages;
 
-			if (is_trivial_record(tracenode->record))
+			if (is_droppable_record(tracenode->record))
 				free_tracenode_record(tracenode);
 		} else {
 			if (!page_free_always_backtrack)
 				break;
 		}
 
-		if (is_trivial_tracenode(tracenode) && parent) {
+		if (is_droppable_tracenode(tracenode) && parent) {
 			struct TreeNode *tree_root = &parent->children->node;
 			get_remove_tree_node(&tree_root, tracenode->key, compTracenode);
 
@@ -229,7 +229,9 @@ static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 			} else {
 				parent->children = NULL;
 			}
+
 			free(tracenode);
+			tracenode = NULL;
 		}
 
 		tracenode = parent;
@@ -271,33 +273,39 @@ static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigne
  * Record that pages is being freed by a tracenode
  * Should only be called against top of the stack
  */
-static void record_page_free(unsigned long pfn, unsigned long nr_pages) {
+static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
 	struct Tracenode *tracenode, *last = NULL;
-	unsigned long pages;
+	unsigned long pfn_off;
 
-	if (pfn > max_pfn) {
-		log_error ("BUG: free pfn %lu out of max_pfn %lu\n", pfn, max_pfn);
+	if (pfn_start + nr_pages > max_pfn) {
+		log_error ("BUG: free pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
 		return;
 	}
 
 	page_free_counter += nr_pages;
-	pages = nr_pages;
-	while (pages--) {
-		tracenode = page_map[pfn].tracenode;
+	pfn_off = pfn_start;
 
-		if (last != tracenode && last) {
-			do_record_page_free(last, nr_pages);
-			last = NULL;
+	while (nr_pages--) {
+		tracenode = page_map[pfn_off].tracenode;
+
+		if (last != tracenode) {
+			if (last) {
+				do_record_page_free(last, pfn_off - pfn_start + 1);
+				last = NULL;
+			}
+			pfn_start = pfn_off;
 		}
 
 		if (tracenode)
 			last = tracenode;
 
-		page_map[pfn++].tracenode = NULL;
+		page_map[pfn_off].tracenode = NULL;
+
+		pfn_off++;
 	}
 
 	if (last)
-		do_record_page_free(last, nr_pages);
+		do_record_page_free(last, pfn_off - pfn_start);
 }
 
 static void do_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
