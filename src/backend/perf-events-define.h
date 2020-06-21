@@ -45,15 +45,26 @@
 		0\
 	},
 
-#define __DoDefineField(name, type, size, ...) ___DoDefineField(name, type, size, ##__VA_ARGS__, (((type)-1) < 0))
-#define _DoDefineField(name, type, ...) __DoDefineField(name, type, ##__VA_ARGS__, sizeof(type))
+#define __DoDefineField(name, type, size, ...)\
+	___DoDefineField(name, type, size, ##__VA_ARGS__, (((type)-1) < 0))
+
+#define _DoDefineField(name, type, ...)\
+	__DoDefineField(name, type, ##__VA_ARGS__, sizeof(type))
 
 #define _DoDefineTable(name, ...)\
 	struct PerfEventField name##_info;
 
-#define DefineEvent(event_class, name, buf_size, ...)\
+#define DefineEvent(event_class, name, buf_size, sample_type, ...)\
 	struct PerfEvent perf_event_##name = {\
-		#event_class, #name, 0, (buf_size * 1024), NUMFIELDS( __VA_ARGS__ ), { FORAPPLY( _DoDefineField, __VA_ARGS__) }\
+		#event_class,\
+		#name,\
+		0,\
+		sample_type,\
+		(buf_size * 1024),\
+		NUMFIELDS( __VA_ARGS__ ),\
+		{\
+			FORAPPLY(_DoDefineField, __VA_ARGS__)\
+		}\
 	};\
 	struct __perf_event_field_table_##name {\
 		FORAPPLY( _DoDefineTable, __VA_ARGS__)\
@@ -101,16 +112,6 @@ struct read_format_group_data {
 	uint64_t id;			/* if PERF_FORMAT_ID */
 };
 
-/*
- * IMPORTANT:
- * Remember to adjust structures blow if changed this config flag
- */
-
-#define SAMPLE_CONFIG_FLAG ( \
-	PERF_SAMPLE_RAW | \
-	PERF_SAMPLE_CALLCHAIN \
-	)
-
 struct perf_sample_id {
 //	uint32_t pid;			/* if PERF_SAMPLE_TID set */
 //	uint32_t tid;			/* if PERF_SAMPLE_TID set */
@@ -127,20 +128,6 @@ struct perf_lost_events {
 	uint64_t	id;
 	uint64_t	lost;
 	struct perf_sample_id sample_id;
-};
-
-struct perf_sample_basic {
-	struct perf_event_header header;
-//	uint64_t sample_id;		/* if PERF_SAMPLE_IDENTIFIER */
-//	uint64_t ip;			/* if PERF_SAMPLE_IP */
-//	uint32_t pid, tid;		/* if PERF_SAMPLE_TID */
-//	uint64_t time;			/* if PERF_SAMPLE_TIME */
-//	uint64_t addr;			/* if PERF_SAMPLE_ADDR */
-//	uint64_t id;			/* if PERF_SAMPLE_ID */
-//	uint64_t stream_id;		/* if PERF_SAMPLE_STREAM_ID */
-//	uint32_t cpu, res;		/* if PERF_SAMPLE_CPU */
-//	uint64_t period;		/* if PERF_SAMPLE_PERIOD */
-//	struct read_format v;		/* if PERF_SAMPLE_READ */
 };
 
 struct perf_sample_callchain {

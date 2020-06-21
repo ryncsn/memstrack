@@ -27,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
+#include <linux/perf_event.h>
 
 #include "perf-internal.h"
 #include "perf-events-define.h"
@@ -39,6 +40,7 @@
 
 DefineEvent(
 	kmem, mm_page_alloc, 512,
+	PERF_SAMPLE_RAW | PERF_SAMPLE_CALLCHAIN,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn),
@@ -49,6 +51,7 @@ DefineEvent(
 
 DefineEvent(
 	kmem, mm_page_free, 512,
+	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
 	EventField(unsigned long, pfn)
@@ -56,17 +59,20 @@ DefineEvent(
 
 DefineEvent(
 	module, module_load, 16,
+	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
 	syscalls, sys_enter_init_module, 16,
+	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
 	syscalls, sys_exit_init_module, 16,
+	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
@@ -111,7 +117,6 @@ static void __process_common(
 		const unsigned char* header,
 		struct perf_sample_callchain **callchain, struct perf_sample_raw **raw) {
 	// struct perf_sample_basic *body = (struct perf_sample_basic*)header;
-	header += sizeof(struct perf_sample_basic);
 
 	*callchain = (struct perf_sample_callchain*)header;
 	header += sizeof((*callchain)->nr) + sizeof((*callchain)->ips) * (*callchain)->nr;
@@ -129,7 +134,10 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(header, &callchain, &raw);
+	callchain = (struct perf_sample_callchain*)(header + sizeof(struct perf_event_header));
+	raw = (struct perf_sample_raw*)(header + sizeof(struct perf_event_header) +
+			sizeof(callchain->nr) +
+			sizeof(callchain->ips) * callchain->nr);
 
 	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
 		// TODO: Older kernel won't work yet
@@ -160,11 +168,9 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 
 static int perf_handle_mm_page_free(const unsigned char* header) {
 	struct PageEvent event;
-
-	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(header, &callchain, &raw);
+	raw = (struct perf_sample_raw*)(header + sizeof(struct perf_event_header));
 
 	unsigned long pfn = read_data_from_perf_raw(mm_page_free, pfn, unsigned long, raw);
 	unsigned int order = read_data_from_perf_raw(mm_page_free, order, unsigned int, raw);
@@ -188,10 +194,9 @@ static int perf_handle_mm_page_free(const unsigned char* header) {
 
 static int perf_handle_module_load(const unsigned char* header) {
 	struct Task *task;
-	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(header, &callchain, &raw);
+	raw = (struct perf_sample_raw*)(header + sizeof(struct perf_event_header));
 
 	struct data_loc_fixed {
 		uint16_t offset;
@@ -212,10 +217,9 @@ static int perf_handle_module_load(const unsigned char* header) {
 
 static int perf_handle_sys_exit_init_module(const unsigned char* header) {
 	struct Task *task;
-	struct perf_sample_callchain *callchain;
 	struct perf_sample_raw *raw;
 
-	__process_common(header, &callchain, &raw);
+	raw = (struct perf_sample_raw*)(header + sizeof(struct perf_event_header));
 
 	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
 
@@ -270,7 +274,7 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.size = sizeof(struct perf_event_attr);
 	attr.type = PERF_TYPE_TRACEPOINT;
 	attr.sample_period = 1;
-	attr.sample_type = SAMPLE_CONFIG_FLAG;
+	attr.sample_type = ring->event->sample_type;
 	attr.sample_id_all = 1;
 
 	attr.disabled = 1;
@@ -342,10 +346,10 @@ int perf_ring_start_sampling(struct PerfEventRing *ring) {
 }
 
 static int perf_debug_handler(struct PerfEventRing *ring, const unsigned char* header) {
-	struct perf_sample_basic *body = (struct perf_sample_basic*)header;
+	struct perf_event_header *body = (struct perf_event_header*)header;
 	log_debug("Event: %s", ring->event->name);
 
-	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_TID & PERF_SAMPLE_CPU) {
+	if (ring->event->sample_type & PERF_SAMPLE_TID & PERF_SAMPLE_CPU) {
 		log_debug(" on CPU %d\n", ring->cpu);
 	} else {
 		log_debug("\n");
@@ -353,7 +357,7 @@ static int perf_debug_handler(struct PerfEventRing *ring, const unsigned char* h
 
 	header += sizeof(*body);
 
-	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_CALLCHAIN) {
+	if (ring->event->sample_type & PERF_SAMPLE_CALLCHAIN) {
 		struct perf_sample_callchain *callchain = (struct perf_sample_callchain*)header;
 		log_debug("Callchain size: %lu\n", callchain->nr);
 		header += sizeof(callchain->nr);
@@ -363,7 +367,7 @@ static int perf_debug_handler(struct PerfEventRing *ring, const unsigned char* h
 		}
 	}
 
-	if (SAMPLE_CONFIG_FLAG & PERF_SAMPLE_RAW) {
+	if (ring->event->sample_type & PERF_SAMPLE_RAW) {
 		struct perf_sample_raw *raw = (struct perf_sample_raw*)header;
 		log_debug("Raw data size: %u\n", raw->size);
 

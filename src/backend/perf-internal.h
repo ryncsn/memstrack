@@ -34,6 +34,7 @@ struct PerfEvent {
 	char *name;
 	int id;
 
+	unsigned long sample_type;
 	unsigned int buf_size;
 	short fileds_num;
 
