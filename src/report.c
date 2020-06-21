@@ -26,6 +26,8 @@
 #include "report.h"
 #include "proc.h"
 
+int m_throttle = 100;
+
 static void report_module_summary(void) {
 	struct Module **modules;
 	modules = collect_modules_sorted(0);
@@ -85,11 +87,7 @@ static void report_task_top (void) {
 
 	for (int i = 0; i < task_map.size && nr_pages_limit > 0; i++) {
 		print_task(tasks[i]);
-
-		if (m_sort_alloc)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
-		else if (m_sort_peak)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
+		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 	}
 
 	free(tasks);
@@ -106,11 +104,7 @@ static void report_task_top_json(void) {
 	log_info("[\n");
 	for (int i = 0; i < task_map.size && nr_pages_limit > 0; i++) {
 		print_task_json(tasks[i]);
-
-		if (m_sort_alloc)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
-		else if (m_sort_peak)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
+		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
 
 		if (i + 1 < task_map.size && nr_pages_limit)
 			log_info(",\n");
@@ -136,11 +130,11 @@ struct reporter_table_t  reporter_table[] = {
 
 int report_table_size = sizeof(reporter_table) / sizeof(struct reporter_table_t);
 
-void final_report(struct HashMap *task_map, int task_limit) {
+void final_report(struct HashMap *task_map, char *type, int task_limit) {
 	load_kallsyms();
 
 	char *report_type;
-	report_type = strtok(m_report, ",");
+	report_type = strtok(type, ",");
 
 	do {
 		for (int i = 0; i < report_table_size; ++i) {

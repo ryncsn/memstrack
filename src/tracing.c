@@ -23,12 +23,16 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+
 #include "memstrack.h"
 #include "tracing.h"
 #include "proc.h"
 
 #define PID_LEN_MAX 6
 
+unsigned int page_size;
+unsigned long trace_count;
 unsigned long page_alloc_counter, page_free_counter;
 
 static unsigned long max_pfn, start_pfn;
@@ -202,6 +206,8 @@ static char* get_process_name_by_pid(const int pid)
 void mem_tracing_init() {
 	// unsigned long total_pages;
 	struct zone_info *zone, *tmp;
+
+	page_size = getpagesize();
 
 	// total_pages = sysconf(_SC_PHYS_PAGES);
 	parse_zone_info(&zone);
@@ -852,10 +858,7 @@ void print_tracenode(struct Tracenode* tracenode, int current_indent, int substa
 			tracenode->record->pages_alloc,
 			tracenode->record->pages_alloc_peak);
 
-	if (m_sort_peak)
-		page_limit = tracenode->record->pages_alloc_peak;
-	else
-		page_limit = tracenode->record->pages_alloc;
+	page_limit = tracenode->record->pages_alloc;
 
 	if (throttle)
 		page_limit = page_limit * throttle / 100;
@@ -866,11 +869,7 @@ void print_tracenode(struct Tracenode* tracenode, int current_indent, int substa
 		for (int i = 0; i < counter &&
 				(substack_limit <= 0 || i < substack_limit); i++) {
 			print_tracenode(nodes[i], next_indent, substack_limit, throttle);
-
-			if (m_sort_peak)
-				page_limit -= nodes[i]->record->pages_alloc_peak;
-			else if (m_sort_alloc)
-				page_limit -= nodes[i]->record->pages_alloc;
+			page_limit -= nodes[i]->record->pages_alloc;
 		}
 		free(nodes);
 	}
@@ -907,10 +906,7 @@ void print_tasks(struct Task *tasks[], int nr_tasks, long nr_pages_limit, short 
 			print_task(tasks[i]);
 		}
 
-		if (m_sort_alloc)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
-		else if (m_sort_peak)
-			nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
+		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 	}
 	if (json)
 		log_info("]\n");

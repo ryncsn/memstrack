@@ -40,22 +40,15 @@
 int m_debug;
 int m_perf = 1;
 int m_ftrace = 0;
-int m_throttle = 100;
-int m_sort_alloc = 1;
-int m_sort_peak = 0;
 int m_notui;
 
 char* m_report;
 char* m_output_path;
 FILE* m_output;
 
-int m_page = 1;
 int m_slab;
+int m_page = 1;
 int m_loop = 1;
-
-unsigned long trace_count;
-
-unsigned int page_size;
 
 char* m_perf_base;
 
@@ -87,7 +80,7 @@ static void do_exit() {
 		perf_handling_clean();
 	}
 	if (m_report) {
-		final_report(&task_map, 0);
+		final_report(&task_map, m_report, 0);
 	}
 	if (m_output != stdout) {
 		fclose(m_output);
@@ -310,15 +303,6 @@ int main(int argc, char **argv) {
 					exit(1);
 				}
 				break;
-			case 's':
-				if (strcmp(optarg, "peak")) {
-					m_sort_peak = 1;
-					m_sort_alloc = 0;
-				} else if (strcmp(optarg, "alloc")) {
-					m_sort_peak = 0;
-					m_sort_alloc = 1;
-				}
-				break;
 			case '?':
 				display_usage();
 				exit(0);
@@ -336,8 +320,6 @@ int main(int argc, char **argv) {
 			free(m_output_path);
 		}
 	}
-
-	page_size = getpagesize();
 
 	mem_tracing_init();
 

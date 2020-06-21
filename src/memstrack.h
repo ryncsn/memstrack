@@ -16,22 +16,23 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <stdio.h>
 
 extern int m_debug;
-extern int m_human;
 extern int m_perf;
-extern int m_slab;
-extern int m_page;
 extern int m_ftrace;
-extern int m_json;
-extern int m_print;
 extern int m_throttle;
-extern int m_summary;
 extern int m_sort_alloc;
 extern int m_sort_peak;
+extern int m_notui;
 
-extern unsigned int page_size;
+extern int m_slab;
+extern int m_page;
+
 extern char* m_report;
+extern unsigned int page_size;
+
+extern FILE* m_output;
 
 #define LOG_LVL_DEBUG 0
 #define LOG_LVL_INFO 1

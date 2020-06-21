@@ -18,8 +18,9 @@ all: memstrack
 
 .PHONY: clean
 clean:
-	@rm -f $(MEMSTRACT_OBJS:.o=.d)
-	rm -f $(MEMSTRACT_OBJS)
+	rm -f $(DEP_FILES:.o=.d)
+	rm -f $(OBJ_FILES)
+	rm -f $(OUT_FILES)
 	rm -f memstrack
 
 install: all
