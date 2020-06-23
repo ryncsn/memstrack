@@ -38,8 +38,6 @@
 #define MAX_VIEW 300
 #define UI_FD_NUMS 2
 
-#define rev_mvprintw(...) do {attron(A_REVERSE); mvprintw(__VA_ARGS__); attroff(A_REVERSE);} while(0)
-
 struct TracenodeView {
 	bool expended;
 };
@@ -180,7 +178,7 @@ static void expend_line(int line) {
 	}
 }
 
-static int tui_print_tracenode(struct Tracenode *node, int indent) {
+static int tui_print_tracenode(WINDOW *tracewin, struct Tracenode *node, int indent) {
 	struct Tracenode** nodes;
 	struct TracenodeView *view;
 
@@ -210,7 +208,7 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 		} else {
 			struct Module *module = container_of(node, struct Module, tracenode);
 			snprintf(tui_info.line_buf, tui_info.line_len,
-				 "%c %7ld |%s\n",
+				 "%c %10ld |%s\n",
 				 expand_sym, module->tracenode.record->pages_alloc, module->name);
 		}
 	} else {
@@ -224,10 +222,13 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 
 	tui_info.line_buf[tui_info.line_len] = '\0';
 
-	if (tui_info.current == line_highlight)
-		rev_mvprintw(tui_info.offset + tui_info.current, 1,  "%s", tui_info.line_buf);
-	else
-		mvprintw(tui_info.offset + tui_info.current, 1,  "%s", tui_info.line_buf);
+	if (tui_info.current == line_highlight) {
+		wattron(tracewin, A_REVERSE);
+		mvwprintw(tracewin, tui_info.current + 1, 1,  "%s", tui_info.line_buf);
+		wattroff(tracewin, A_REVERSE);
+	} else {
+		mvwprintw(tracewin, tui_info.current + 1, 1,  "%s", tui_info.line_buf);
+	}
 
 	if (tui_info.current++ > tui_info.limit)
 		return -1;
@@ -235,7 +236,7 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 	if (view->expended && node->children) {
 		nodes = collect_tracenodes_sorted(node->children, &count, 1);
 		for (int i = 0; i < count; ++i) {
-			ret = tui_print_tracenode(nodes[i], indent + 1);
+			ret = tui_print_tracenode(tracewin, nodes[i], indent + 1);
 			if (ret)
 				break;
 		}
@@ -245,14 +246,25 @@ static int tui_print_tracenode(struct Tracenode *node, int indent) {
 	return ret;
 }
 
-static void update_tracewin() {
+static void update_tracewin(WINDOW *tracewin) {
+	/* Clean up the window */
+	werase(trace_win);
+	box(trace_win, 0, 0);
+
+	/* Window title bar */
+	if (ui_type == UI_TYPE_TASK) {
+		mvwprintw(tracewin, 0, 1, "    PID   |    Pages   |    Process Command Line\n");
+	} else {
+		mvwprintw(tracewin, 0, 1, "    Pages    |    Module Name   \n");
+	}
+
 	update_top_tracenodes();
 
 	tui_info.current = 0;
 
 	// TODO: only work when it's single thread
 	for (int task_n = 0; task_n < tracenode_num; ++task_n) {
-		if (tui_print_tracenode(sorted_tracenodes[task_n], 0))
+		if (tui_print_tracenode(tracewin, sorted_tracenodes[task_n], 0))
 			return;
 	}
 }
@@ -260,17 +272,17 @@ static void update_tracewin() {
 static void update_ui(WINDOW *trace_win) {
 	if (!tui_info.enabled) {
 		mvprintw(0, 0, "Console is too small\n");
+		refresh();
 		return;
 	}
 
-	mvprintw(0, 0,  "'q' to quit, 'r' to reload symbols\n");
+	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules\n");
 	mvprintw(1, 0, "Trace counter: %lu\n", trace_count);
 	mvprintw(2, 0, "Total allocated: %luMB\n", page_alloc_counter * page_size / SIZE_MB);
 	mvprintw(3, 0, "Total Freed: %luMB\n", page_free_counter * page_size / SIZE_MB);
-
-	update_tracewin();
-
 	refresh();
+
+	update_tracewin(trace_win);
 	wrefresh(trace_win);
 }
 
@@ -300,11 +312,12 @@ int tui_update_size(void) {
 	tui_info.limit = LINES - MISC_PAD - 4;
 	tui_info.offset = MISC_PAD + 1;
 
-	box(trace_win, 0, 0);
 	return 0;
 }
 
 void tui_init(void) {
+	need_page_free_always_backtrack();
+
 	load_kallsyms();
 	initscr();
 	keypad(stdscr, TRUE);
@@ -314,8 +327,6 @@ void tui_init(void) {
 	raw();
 
 	tui_update_size();
-
-	need_page_free_always_backtrack();
 }
 
 void tui_loop(void) {
@@ -327,19 +338,20 @@ void tui_loop(void) {
 		ch = getch();
 		switch (ch) {
 			case 'q':
+			case 'Q':
 				endwin();
 				m_exit(0);
 				return;
 
 			case 'm':
+			case 'M':
 				ui_type++;
 				if (ui_type >= UI_TYPE_MAX)
 					ui_type = 0;
-				/* Clean up the window */
-				box(trace_win, 0, 0);
-				return;
+				break;
 
 			case 'r':
+			case 'R':
 				load_kallsyms();
 				break;
 
@@ -357,6 +369,7 @@ void tui_loop(void) {
 				line_highlight++;
 				if (line_highlight > LINES - MISC_PAD)
 					line_highlight = LINES - MISC_PAD;
+				break;
 		}
 
 		update_ui(trace_win);
