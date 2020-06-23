@@ -50,7 +50,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 512,
+	kmem, mm_page_free, 64,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -58,20 +58,20 @@ DefineEvent(
 );
 
 DefineEvent(
-	module, module_load, 16,
+	module, module_load, 8,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
-	syscalls, sys_enter_init_module, 16,
+	syscalls, sys_enter_init_module, 8,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_init_module, 16,
+	syscalls, sys_exit_init_module, 8,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);

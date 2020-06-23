@@ -50,6 +50,81 @@ void need_page_free_always_backtrack(void) {
 	page_free_always_backtrack = 1;
 }
 
+struct Symbol {
+	trace_addr_t addr;
+	char type;
+	char* module_name;
+	char* sym_name;
+};
+
+static struct Symbol *symbol_table;
+int symbol_table_len;
+
+static struct Symbol* kaddr_to_symbol(trace_addr_t addr) {
+	int left = 0, right = symbol_table_len, mid;
+
+	do {
+		mid = (left + right) / 2;
+		if (mid == left || mid == right) {
+			mid = left;
+			break;
+		}
+
+		if (symbol_table[mid].addr > addr) {
+			right = mid;
+		} else if (symbol_table[mid].addr < addr) {
+			left = mid;
+		} else {
+			break;
+		}
+	} while (1);
+
+	return symbol_table + mid;
+}
+
+static char* kaddr_to_module(trace_addr_t addr) {
+	static char *buffer;
+
+	struct Symbol *sym = kaddr_to_symbol(addr);
+
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
+	}
+
+	if (sym && sym->module_name)
+		buffer = strdup(sym->module_name);
+
+	return buffer;
+};
+
+static char* kaddr_to_sym(trace_addr_t addr) {
+	static char *buffer;
+
+	struct Symbol *sym = kaddr_to_symbol(addr);
+
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
+	}
+
+	if (sym) {
+		int buflen;
+
+		if (sym->module_name) {
+			buflen = strlen(sym->sym_name) + strlen(sym->module_name) + 16 + 6 + 1;
+			buffer = malloc(buflen);
+			snprintf(buffer, buflen, "%s %s (0x%llx)", sym->sym_name, sym->module_name, (unsigned long long)addr);
+		} else {
+			buflen = strlen(sym->sym_name) + 16 + 6 + 1;
+			buffer = malloc(buflen);
+			snprintf(buffer, buflen, "%s (0x%llx)", sym->sym_name, (unsigned long long)addr);
+		}
+	}
+
+	return buffer;
+};
+
 char* get_tracenode_module(struct Tracenode *node) {
 	if (!node->key)
 		return NULL;
@@ -93,17 +168,6 @@ static unsigned int hash_task(const void *key) {
 HASH_MAP(hash_task, comp_task, task_map);
 
 struct PageRecord *page_map;
-
-struct Symbol {
-	trace_addr_t addr;
-	char type;
-	char* module_name;
-	char* sym_name;
-};
-
-static struct Symbol *symbol_table;
-
-int symbol_table_len;
 
 static char* get_process_name_by_pid(const int pid)
 {
@@ -505,67 +569,6 @@ void load_kallsyms() {
 	qsort((void*)symbol_table, symbol_table_len, sizeof(struct Symbol), comp_symbol);
 }
 
-static struct Symbol* kaddr_to_symbol(trace_addr_t addr) {
-	int left = 0, right = symbol_table_len, mid;
-
-	do {
-		mid = (left + right) / 2;
-		if (mid == left || mid == right) {
-			mid = left;
-			break;
-		}
-
-		if (symbol_table[mid].addr > addr) {
-			right = mid;
-		} else if (symbol_table[mid].addr < addr) {
-			left = mid;
-		} else {
-			break;
-		}
-	} while (1);
-
-	return symbol_table + mid;
-}
-
-char* kaddr_to_module(trace_addr_t addr) {
-	static char *buffer;
-
-	struct Symbol *sym = kaddr_to_symbol(addr);
-
-	if (buffer) {
-		free(buffer);
-		buffer = NULL;
-	}
-
-	if (sym && sym->module_name)
-		buffer = strdup(sym->module_name);
-
-	return buffer;
-};
-
-char* kaddr_to_sym(trace_addr_t addr) {
-	static char *buffer;
-
-	struct Symbol *sym = kaddr_to_symbol(addr);
-
-	if (buffer) {
-		free(buffer);
-		buffer = NULL;
-	}
-
-	if (sym) {
-		if (sym->module_name) {
-			buffer = malloc(strlen(sym->sym_name) + strlen(sym->module_name) + 16 + 6 + 1);
-			sprintf(buffer, "%s %s (0x%llx)", sym->sym_name, sym->module_name, (unsigned long long)addr);
-		} else {
-			buffer = malloc(strlen(sym->sym_name) + 16 + 6 + 1);
-			sprintf(buffer, "%s (0x%llx)", sym->sym_name, (unsigned long long)addr);
-		}
-	}
-
-	return buffer;
-};
-
 int for_each_tracenode_ret(
 		struct Tracenode* root,
 		int (*op)(struct Tracenode *node, void *blob),
@@ -944,21 +947,10 @@ static struct Tracenode *merge_into_module(struct Tracenode *node, struct Module
 	if (node->parent) {
 		pnode = merge_into_module(node->parent, module);
 	} else {
-		pnode = &module->tracenode;
+		return &module->tracenode;
 	}
 
-	pnode = get_or_new_child_tracenode(pnode, node->key);
-
-	// TODO: User a helper to alloc Record
-	if (node->record) {
-		if (!pnode->record)
-			pnode->record = calloc(1, sizeof(struct Record));
-
-		pnode->record->pages_alloc += node->record->pages_alloc;
-		pnode->record->pages_alloc_peak += node->record->pages_alloc_peak;
-	}
-
-	return pnode;
+	return get_or_new_child_tracenode(pnode, node->key);
 }
 
 /* Return number of modules touched */
@@ -974,7 +966,10 @@ static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
 	if (node->children) {
 		for_each_tracenode(node->children, do_gather_tracenodes_by_module, module);
 	} else if (module) {
-		merge_into_module(node, module);
+		struct Tracenode *leaf = merge_into_module(node, module);
+		leaf->record = calloc(1, sizeof(struct Record));
+		leaf->record->pages_alloc = node->record->pages_alloc;
+		leaf->record->pages_alloc_peak = node->record->pages_alloc_peak;
 	}
 }
 

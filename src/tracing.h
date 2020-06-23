@@ -106,8 +106,6 @@ void load_kallsyms();
 void store_symbol_instead(void);
 void need_page_free_always_backtrack(void);
 
-char* kaddr_to_sym(trace_addr_t addr);
-char* kaddr_to_module(trace_addr_t addr);
 char* get_tracenode_symbol(struct Tracenode *node);
 
 void populate_tracenode_shallow(struct Tracenode* tracenode);
