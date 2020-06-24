@@ -41,11 +41,16 @@ if ! is_debugfs_ready ; then
     prepare_debugfs
 fi
 
-if [ -n "$DEBUG_MEM_LEVEL" ]; then
-    if [ "$DEBUG_MEM_LEVEL" -ge 5 ]; then
+MEMSTRACK_LEVEL=$(getargnum 0 0 3 rd.memstrack)
+
+if [ -n "$MEMSTRACK_LEVEL" ]; then
+    if [ "$MEMSTRACK_LEVEL" -ge 3 ]; then
         echo "memstrack - will report kernel module memory usage summary and top allocation stack"
-        memstrack --report module_summary,module_top --notui --throttle 80 -o /.memstrack &
-    elif [ "$DEBUG_MEM_LEVEL" -ge 4 ]; then
+        memstrack --report task_summary,module_summary,module_top --notui --throttle 80 -o /.memstrack &
+    elif [ "$MEMSTRACK_LEVEL" -ge 2 ]; then
+        echo "memstrack - will report memory usage summary"
+        memstrack --report task_summary,module_summary --notui --throttle 80 -o /.memstrack &
+    elif [ "$MEMSTRACK_LEVEL" -ge 1 ]; then
         echo "memstrack - will report memory usage summary"
         memstrack --report module_summary --notui --throttle 80 -o /.memstrack &
     else

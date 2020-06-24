@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 . /lib/dracut-lib.sh
 
-if ! [ "$DEBUG_MEM_LEVEL" -ge 4 ]; then
+MEMSTRACK_LEVEL=$(getargnum 0 0 3 rd.memstrack)
+
+if ! [ "$MEMSTRACK_LEVEL" -ge 1 ]; then
     exit 0
 fi
 
