@@ -967,9 +967,10 @@ static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
 		for_each_tracenode(node->children, do_gather_tracenodes_by_module, module);
 	} else if (module) {
 		struct Tracenode *leaf = merge_into_module(node, module);
-		leaf->record = calloc(1, sizeof(struct Record));
-		leaf->record->pages_alloc = node->record->pages_alloc;
-		leaf->record->pages_alloc_peak = node->record->pages_alloc_peak;
+		if (!leaf->record)
+			leaf->record = calloc(1, sizeof(struct Record));
+		leaf->record->pages_alloc += node->record->pages_alloc;
+		leaf->record->pages_alloc_peak += node->record->pages_alloc_peak;
 	}
 }
 
