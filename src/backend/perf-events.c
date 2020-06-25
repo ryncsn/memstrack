@@ -50,7 +50,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 64,
+	kmem, mm_page_free, 128,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -186,7 +186,6 @@ static int perf_handle_mm_page_free(const unsigned char* header) {
 		event.pages_alloc *= 2;
 	}
 
-	// TODO: not tracking task here
 	update_record(NULL, &event);
 
 	return 0;

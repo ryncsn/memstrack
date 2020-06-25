@@ -237,6 +237,31 @@ static int compTracenode(const struct TreeNode *root, const void *key) {
 	}
 }
 
+static void free_tracenode_record(struct Tracenode *tracenode) {
+	if (tracenode->record->blob) {
+		free(tracenode->record->blob);
+	}
+
+	free(tracenode->record);
+	tracenode->record = NULL;
+}
+
+static void free_tracenode(struct Tracenode *tracenode) {
+	struct Tracenode *parent = tracenode->parent;
+	struct TreeNode *tree_root = &parent->children->node;
+
+	get_remove_tree_node(&tree_root, tracenode->key, compTracenode);
+
+	// TODO: This tree looks ugly
+	if (tree_root) {
+		parent->children = container_of(tree_root, struct Tracenode, node);
+	} else {
+		parent->children = NULL;
+	}
+
+	free(tracenode);
+}
+
 static int is_droppable_record(struct Record *record) {
 	if (record->pages_alloc == 0 && record->pages_alloc_peak < trivial_peak_limit) {
 		return 1;
@@ -245,23 +270,25 @@ static int is_droppable_record(struct Record *record) {
 	return 0;
 }
 
-static int is_droppable_tracenode(struct Tracenode *node) {
-	if (node->children)
-		return 0;
-
-	if (node->record)
-		return is_droppable_record(node->record);
-
-	return 1;
-}
-
-static void free_tracenode_record(struct Tracenode *tracenode) {
-	if (tracenode->record->blob) {
-		free(tracenode->record->blob);
+static void tracenode_gc(struct Tracenode *tracenode) {
+	/* Ensure record is either dropped or droppable */
+	if (tracenode->record) {
+		if (is_droppable_record(tracenode->record)) {
+			free_tracenode_record(tracenode);
+		} else {
+			return;
+		}
 	}
 
-	free(tracenode->record);
-	tracenode->record = NULL;
+	/* Only clean up record for top nodes */
+	if (!tracenode->parent) {
+		tracenode->record = NULL;
+		return;
+	}
+
+	if (!tracenode->children) {
+		free_tracenode(tracenode);
+	}
 }
 
 /*
@@ -276,31 +303,18 @@ static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 		if (tracenode->record) {
 			tracenode->record->pages_alloc -= nr_pages;
 
-			if (is_droppable_record(tracenode->record))
-				free_tracenode_record(tracenode);
-		} else {
-			if (!page_free_always_backtrack)
+			/* This may happen due to missing event */
+			if (tracenode->record->pages_alloc < 0)
+				tracenode->record->pages_alloc = 0;
+
+			if (!page_free_always_backtrack) {
 				break;
-		}
-
-		if (is_droppable_tracenode(tracenode) && parent) {
-			struct TreeNode *tree_root = &parent->children->node;
-			get_remove_tree_node(&tree_root, tracenode->key, compTracenode);
-
-			// TODO: This tree looks ugly
-			if (tree_root) {
-				parent->children = container_of(tree_root, struct Tracenode, node);
-			} else {
-				parent->children = NULL;
 			}
-
-			free(tracenode);
-			tracenode = NULL;
 		}
 
+		tracenode_gc(tracenode);
 		tracenode = parent;
 	}
-
 }
 
 /*
@@ -610,7 +624,7 @@ void for_each_tracenode(
 	}
 }
 
-void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
+static void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
 	if (tracenode->record && tracenode->children) {
 		free_tracenode_record(tracenode);
 		for_each_tracenode(tracenode->children, do_depopulate_tracenode, NULL);
@@ -967,10 +981,19 @@ static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
 		for_each_tracenode(node->children, do_gather_tracenodes_by_module, module);
 	} else if (module) {
 		struct Tracenode *leaf = merge_into_module(node, module);
-		if (!leaf->record)
-			leaf->record = calloc(1, sizeof(struct Record));
-		leaf->record->pages_alloc += node->record->pages_alloc;
-		leaf->record->pages_alloc_peak += node->record->pages_alloc_peak;
+		if (node->record) {
+			if (!leaf->record)
+				leaf->record = calloc(1, sizeof(struct Record));
+			leaf->record->pages_alloc += node->record->pages_alloc;
+			leaf->record->pages_alloc_peak += node->record->pages_alloc_peak;
+		} else {
+			// DEBUG
+			log_error("BUG\n");
+			while (node) {
+				log_error("%s, %p, %p\n", get_tracenode_symbol(node), node->children, node->record);
+				node = node->parent;
+			}
+		}
 	}
 }
 
