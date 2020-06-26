@@ -318,36 +318,6 @@ static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 }
 
 /*
- * Record that a memory region is being allocated by a tracenode
- * Should only be called against top of the stack
- */
-static void record_page_alloc(struct Tracenode *root, unsigned long pfn, unsigned long nr_pages) {
-	if (pfn > max_pfn) {
-		log_error ("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn, max_pfn);
-		return;
-	}
-
-	struct Record *record;
-	page_alloc_counter += nr_pages;
-
-	record = root->record;
-	record->pages_alloc += nr_pages;
-	if (record->pages_alloc > record->pages_alloc_peak) {
-		record->pages_alloc_peak = record->pages_alloc;
-	}
-
-	// TODO: On older kernel the page struct address is used, need a way to convert to pfn
-	if (pfn > max_pfn) {
-		pfn = pfn / 4;
-		pfn = pfn % max_pfn;
-	}
-
-	while (nr_pages--) {
-		page_map[pfn++].tracenode = root;
-	}
-}
-
-/*
  * Record that pages is being freed by a tracenode
  * Should only be called against top of the stack
  */
@@ -367,23 +337,53 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
 		tracenode = page_map[pfn_off].tracenode;
 
 		if (last != tracenode) {
-			if (last) {
-				do_record_page_free(last, pfn_off - pfn_start + 1);
-				last = NULL;
-			}
+			if (last)
+				do_record_page_free(last, pfn_off - pfn_start);
 			pfn_start = pfn_off;
+			last = tracenode;
 		}
 
-		if (tracenode)
-			last = tracenode;
-
-		page_map[pfn_off].tracenode = NULL;
-
-		pfn_off++;
+		page_map[pfn_off++].tracenode = NULL;
 	}
 
 	if (last)
 		do_record_page_free(last, pfn_off - pfn_start);
+}
+
+/*
+ * Record that a memory region is being allocated by a tracenode
+ * Should only be called against top of the stack
+ */
+static void record_page_alloc(struct Tracenode *root, unsigned long pfn_start, unsigned long nr_pages) {
+	if (pfn_start > max_pfn) {
+		log_error ("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
+		return;
+	}
+
+	unsigned long pfn_off;
+	struct Record *record = root->record;
+	struct Tracenode *last_missed_tracenode = NULL;
+
+	page_alloc_counter += nr_pages;
+	record->pages_alloc += nr_pages;
+	if (record->pages_alloc > record->pages_alloc_peak) {
+		record->pages_alloc_peak = record->pages_alloc;
+	}
+
+	pfn_off = pfn_start;
+	while (nr_pages--) {
+		if (last_missed_tracenode != page_map[pfn_off].tracenode) {
+			if (last_missed_tracenode)
+				do_record_page_free(last_missed_tracenode, pfn_off - pfn_start);
+			pfn_start = pfn_off;
+			last_missed_tracenode = page_map[pfn_off].tracenode;
+		}
+
+		page_map[pfn_off++].tracenode = root;
+	}
+
+	if (last_missed_tracenode)
+		do_record_page_free(last_missed_tracenode, pfn_off - pfn_start);
 }
 
 static void do_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
