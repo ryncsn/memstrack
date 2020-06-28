@@ -66,12 +66,13 @@ static void report_task_summary (void) {
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
 	tasks = collect_tasks_sorted(0);
-	for (int i = 0; i < task_map.size; ++i) {
+	for (int i = 0; i < task_map.size && nr_pages_limit > 0; ++i) {
 		log_info(
 				"Task %s (%ld) using %ld pages, peak usage %ld pages\n",
 				tasks[i]->task_name, tasks[i]->pid,
 				tasks[i]->tracenode.record->pages_alloc,
 				tasks[i]->tracenode.record->pages_alloc_peak);
+		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 	}
 
 	free(tasks);
