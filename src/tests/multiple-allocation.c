@@ -1,13 +1,6 @@
-#include <stdlib.h>
-#include <stdarg.h>
-#include <execinfo.h>
-#include <assert.h>
-#include "../memstrack.h"
-#include "../tracing.h"
+#include "unittesdt.h"
 
-#undef NDEBUG
-
-int empty_record(void) {
+int test(void) {
 	struct Task* task;
 	struct Tracenode* tracenode;
 	struct PageEvent event = {
@@ -15,6 +8,8 @@ int empty_record(void) {
 		1024
 	};
 	struct Task** tasks;
+
+	mem_tracing_init();
 
 	/* Create 2 tasks, and alloc 4096 pages in total */
 	task = get_or_new_task("task1", 1000);
@@ -49,47 +44,4 @@ int empty_record(void) {
 	return 0;
 }
 
-int m_log(int level, const char *__restrict fmt, ...){
-	if (level <= LOG_LVL_DEBUG) {
-		return 0;
-	}
-
-	int ret;
-	va_list args;
-	va_start (args, fmt);
-	ret = vfprintf(stderr, fmt, args);
-	va_end (args);
-	return ret;
-}
-
-void print_backtrace(void){
-	char bt_buffer[4096];
-	char **bt_string;
-	int bt_count;
-
-	bt_count = backtrace((void **)(&bt_buffer), 4096);
-	bt_string = backtrace_symbols((void **)(&bt_buffer), bt_count);
-
-	for (int i = 0; i < bt_count; i++) {
-		printf("%s\n", bt_string[i]);
-	}
-}
-
-int main(int argc, char *argv[])
-{
-	int ret;
-
-	printf("Running test: %s\n", "Single Task");
-
-	mem_tracing_init();
-
-	ret = empty_record();
-
-	if (ret) {
-		printf("Test failed: %s\n", "Single Task");
-		return ret;
-	} else {
-		printf("Test passed: %s\n", "Single Task");
-		return 0;
-	}
-}
+UNITTEST("Multiple Allocation", test);

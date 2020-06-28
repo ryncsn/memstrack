@@ -228,8 +228,6 @@ void mem_tracing_init() {
 		free(tmp);
 	}
 
-	log_debug("max_pfn is %lu\n", max_pfn);
-
 	// TODO: handle holes to save memory
 	page_map = calloc(max_pfn, sizeof(struct PageRecord));
 }

@@ -9,7 +9,7 @@ mandir ?= ${prefix}/share/man
 dracutlibdir ?= ${prefix}/lib/dracut
 
 CC = gcc
-CFLAGS := -Os -g -std=c11 $(CFLAGS)
+CFLAGS := -Os -g -std=c11 -fPIC $(CFLAGS)
 LDFLAGS := -lncurses $(LDFLAGS)
 
 include src/Makefile
@@ -40,8 +40,8 @@ dracut-module-install: install
 uninstall:
 	rm $(DESTDIR)$(bindir)/memstrack
 
-test: memstrack
-	misc/selftest.sh
+test: unittests-run memstrack
+	sudo misc/selftest.sh
 
 dracut-module-uninstall:
 	rm -rf $(DESTDIR)$(dracutlibdir)/modules.d/99memstrack

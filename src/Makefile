@@ -31,20 +31,30 @@ MEMSTRACT_TEST_OBJS = $(MEMSTRACT_TEST_SRCS:.c=.o)
 MEMSTRACT_TEST_DEPS = $(MEMSTRACT_TEST_OBJS:.o=.d)
 MEMSTRACT_TESTS = $(patsubst %.o,%,$(MEMSTRACT_TEST_OBJS))
 
+MEMSTRACT_TEST_PRELOAD_SRCS = src/tests/preloads/preload.c
+MEMSTRACT_TEST_PRELOAD_OBJS = $(MEMSTRACT_TEST_PRELOAD_SRCS:.c=.o)
+MEMSTRACT_TEST_PRELOAD_DEPS = $(MEMSTRACT_TEST_PRELOAD_OBJS:.o=.d)
+MEMSTRACT_TEST_PRELOAD = $(MEMSTRACT_TEST_PRELOAD_SRCS:.c=.so)
+
+$(MEMSTRACT_TEST_PRELOAD): $(MEMSTRACT_TEST_PRELOAD_OBJS)
+	$(CC) -shared $(CFLAGS) $(LDFLAGS) -o $@ $<
+
 $(MEMSTRACT_TESTS): % : %.o $(MEMSTRACT_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(MEMSTRACT_OBJS)
 
-.PHONY: unittest
-unittests: $(MEMSTRACT_TESTS)
+.PHONY: unittests
+unittests: $(if $(TEST),$(TEST),$(MEMSTRACT_TESTS)) $(MEMSTRACT_TEST_PRELOAD)
 
-.PHONY: run-unittests
-run-unittests: $(MEMSTRACT_TESTS)
+.PHONY: unittests-run
+unittests-run: unittests
 	@echo "STARTING UNIT TESTS";
 	@echo "---------------------------------------------------";
-	@for f in $(MEMSTRACT_TESTS); do\
-		echo "EXECUTING TEST: $${f}";\
+	@for f in $(if $(TEST),$(TEST),$(MEMSTRACT_TESTS)); do\
+		echo "EXECUTING with TEST=$${f}";\
 		echo "---------------------------------------------------";\
-		sh -c "$${f} && printf '\nTEST PASSED\n' || printf '\nTEST FAILED\n'";\
+		sh -c "LD_PRELOAD=$(MEMSTRACT_TEST_PRELOAD) $${f} && \
+		printf '\nTEST PASSED\n' || \
+		printf '\nTEST FAILED\n'";\
 		echo "---------------------------------------------------";\
 	done
 
@@ -52,8 +62,9 @@ run-unittests: $(MEMSTRACT_TESTS)
 include $(MEMSTRACT_DEPS)
 include $(MEMSTRACT_MAIN_DEPS)
 include $(MEMSTRACT_TEST_DEPS)
+include $(MEMSTRACT_TEST_PRELOAD_DEPS)
 
 # For clean up, all generated files are here:
-DEP_FILES = $(MEMSTRACT_DEPS) $(MEMSTRACT_MAIN_DEPS) $(MEMSTRACT_TEST_DEPS)
-OBJ_FILES = $(MEMSTRACT_OBJS) $(MEMSTRACT_MAIN_OBJS) $(MEMSTRACT_TEST_OBJS)
-OUT_FILES = $(MEMSTRACT_TESTS) memstrack
+DEP_FILES = $(MEMSTRACT_DEPS) $(MEMSTRACT_MAIN_DEPS) $(MEMSTRACT_TEST_DEPS) $(MEMSTRACT_TEST_PRELOAD_DEPS)
+OBJ_FILES = $(MEMSTRACT_OBJS) $(MEMSTRACT_MAIN_OBJS) $(MEMSTRACT_TEST_OBJS) $(MEMSTRACT_TEST_PRELOAD_OBJS)
+OUT_FILES = $(MEMSTRACT_TESTS) $(MEMSTRACT_TEST_PRELOAD) memstrack
