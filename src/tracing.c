@@ -329,11 +329,6 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
 	struct Tracenode *tracenode, *last = NULL;
 	unsigned long pfn_off;
 
-	if (pfn_start + nr_pages > max_pfn) {
-		log_error ("BUG: free pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
-		return;
-	}
-
 	page_free_counter += nr_pages;
 	pfn_off = pfn_start;
 
@@ -392,12 +387,23 @@ static void record_page_alloc(struct Tracenode *root, unsigned long pfn_start, u
 
 static void do_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
 	if (pevent->pages_alloc > 0) {
+		if (pevent->pfn + pevent->pages_alloc >= max_pfn) {
+			log_error ("BUG: Alloc pfn %lu out of max_pfn %lu\n", pevent->pfn + pevent->pages_alloc, max_pfn);
+			return;
+		}
+
 		if (!tracenode) {
 			log_debug("BUG: Page alloc event with NULL tracenode\n");
 			return;
 		}
+
 		record_page_alloc(tracenode, pevent->pfn, pevent->pages_alloc);
 	} else if (pevent->pages_alloc < 0) {
+		if (pevent->pfn + -pevent->pages_alloc >= max_pfn) {
+			log_error ("BUG: Free pfn %lu out of max_pfn %lu\n", pevent->pfn + -pevent->pages_alloc, max_pfn);
+			return;
+		}
+
 		record_page_free(pevent->pfn, 0 - pevent->pages_alloc);
 	} else {
 		log_debug("BUG: Empty Event\n");
