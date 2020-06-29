@@ -1,4 +1,7 @@
 # Memstrack
+
+[![Build Status](https://travis-ci.org/ryncsn/memstrack.svg?branch=master)](https://travis-ci.org/ryncsn/memstrack) [![codecov](https://codecov.io/gh/ryncsn/memstrack/branch/master/graph/badge.svg)](https://codecov.io/gh/ryncsn/memstrack)
+
 A memory allocation trace, like a hot spot analyzer for memory allocation, it can help analyze overall memory usage, peak memory usage, kernel module memory usage. Userspace memory trace is planned and not yet implemented.
 
 # Usage
