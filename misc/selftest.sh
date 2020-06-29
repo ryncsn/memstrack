@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 SCRIPT_BASEDIR=$(dirname "$0")
 MEMSTRACK_PATH=$(dirname $SCRIPT_BASEDIR)
