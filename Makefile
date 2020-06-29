@@ -10,7 +10,8 @@ dracutlibdir ?= ${prefix}/lib/dracut
 
 CC = gcc
 CFLAGS := -Os -g -std=c11 -fPIC $(CFLAGS)
-LDFLAGS := -lncurses $(LDFLAGS)
+LDFLAGS := $(LDFLAGS)
+LIBS := -lncurses
 
 include src/Makefile
 

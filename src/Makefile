@@ -23,7 +23,7 @@ MEMSTRACT_MAIN_OBJS = $(MEMSTRACT_MAIN_SRCS:.c=.o)
 MEMSTRACT_MAIN_DEPS = $(MEMSTRACT_MAIN_OBJS:.o=.d)
 
 memstrack: $(MEMSTRACT_MAIN_OBJS) $(MEMSTRACT_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $+
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $+ $(LIBS)
 
 # Unit test rules
 MEMSTRACT_TEST_SRCS = $(wildcard src/tests/*.c)
@@ -40,7 +40,7 @@ $(MEMSTRACT_TEST_PRELOAD): $(MEMSTRACT_TEST_PRELOAD_OBJS)
 	$(CC) -shared $(CFLAGS) $(LDFLAGS) -o $@ $<
 
 $(MEMSTRACT_TESTS): % : %.o $(MEMSTRACT_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(MEMSTRACT_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(MEMSTRACT_OBJS) $(LIBS)
 
 .PHONY: unittests
 unittests: $(if $(TEST),$(TEST),$(MEMSTRACT_TESTS)) $(MEMSTRACT_TEST_PRELOAD)
