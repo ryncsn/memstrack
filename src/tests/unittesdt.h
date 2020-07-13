@@ -29,6 +29,10 @@ int m_log(int level, const char *__restrict fmt, ...){
 	return ret;
 }
 
+void m_exit(int ret){
+	return;
+}
+
 void dump_task(struct Task *task) {
 	printf("Task %s: page_alloc: %ld, peak_alloc_peak: %ld\n",
 			task->task_name,
