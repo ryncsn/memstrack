@@ -6,7 +6,8 @@ A memory allocation trace, like a hot spot analyzer for memory allocation, it ca
 
 # Usage
 It has a TUI showing current memory allocation status:
-![alt text](https://ryncsn.github.io/latest-memstrack-screenshot.png "Screenshot of TUI")
+![alt text](https://ryncsn.github.io/latest-memstrack-screenshot.png "Screenshot of TUI showing tasks")
+![alt text](https://ryncsn.github.io/latest-memstrack-screenshot-2.png "Screenshot of TUI showing modules")
 
 And can generate reports of memory allocation and usage of a long period.
 
