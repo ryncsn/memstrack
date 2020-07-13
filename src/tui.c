@@ -340,7 +340,7 @@ void tui_loop(void) {
 			case 'q':
 			case 'Q':
 				endwin();
-				/// m_exit(0);
+				m_exit(0);
 				return;
 
 			case 'm':
