@@ -222,6 +222,26 @@ struct HashNode* get_hash_node(
 	return node;
 }
 
+struct HashNode* get_remove_hash_node(
+		struct HashMap* map,
+		void *key)
+{
+	struct HashNode **node_p = &map->buckets[map->hash(key) % HASH_BUCKET];
+	struct HashNode *node = NULL;
+
+	while (*node_p != NULL && map->comp(*node_p, key) != 0) {
+		node_p = &((*node_p)->next);
+	}
+
+	if (*node_p) {
+		node = *node_p;
+		*node_p = node->next;
+		map->size --;
+	}
+
+	return node;
+}
+
 void insert_hash_node(
 		struct HashMap* map,
 		struct HashNode* src,

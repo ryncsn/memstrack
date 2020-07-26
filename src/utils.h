@@ -68,16 +68,13 @@ struct HashMap {
 #define right_child(ptr, type, member)\
 	container_of(((ptr)->member.right), type, member)
 
-
 struct TreeNode* get_tree_node(
 		struct TreeNode **root_p, void *key,
 		TreeComp comp);
 
-
 struct TreeNode* get_remove_tree_node(
 		struct TreeNode **root_p, void *key,
 		TreeComp comp);
-
 
 void insert_tree_node(
 		struct TreeNode **root_p, struct TreeNode *src, void *key,
@@ -88,11 +85,13 @@ void iter_tree_node(
 		void (*handler)(struct TreeNode *node, void *blob),
 		void *blob);
 
+struct HashNode* get_remove_hash_node(
+		struct HashMap* map,
+		void *key);
 
 struct HashNode* get_hash_node(
 		struct HashMap* map,
 		void *key);
-
 
 void insert_hash_node(
 		struct HashMap* map,

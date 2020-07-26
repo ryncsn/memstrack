@@ -80,7 +80,7 @@ static void do_exit() {
 		perf_handling_clean();
 	}
 	if (m_report) {
-		final_report(&task_map, m_report, 0);
+		final_report(m_report, 0);
 	}
 	if (m_output != stdout) {
 		fclose(m_output);

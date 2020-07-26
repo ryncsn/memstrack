@@ -59,14 +59,15 @@ static void report_module_top(void) {
 }
 
 static void report_task_summary (void) {
+	int task_num;
 	long nr_pages_limit;
 	struct Task **tasks;
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 
-	tasks = collect_tasks_sorted(0);
-	for (int i = 0; i < task_map.size && nr_pages_limit > 0; ++i) {
+	tasks = collect_tasks_sorted(0, &task_num);
+	for (int i = 0; i < task_num && nr_pages_limit > 0; ++i) {
 		log_info(
 				"Task %s (%ld) using %ld pages, peak usage %ld pages\n",
 				tasks[i]->task_name, tasks[i]->pid,
@@ -79,14 +80,15 @@ static void report_task_summary (void) {
 };
 
 static void report_task_top (void) {
-	struct Task **tasks;
+	int task_num;
 	long nr_pages_limit;
+	struct Task **tasks;
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-	tasks = collect_tasks_sorted(0);
+	tasks = collect_tasks_sorted(0, &task_num);
 
-	for (int i = 0; i < task_map.size && nr_pages_limit > 0; i++) {
+	for (int i = 0; i < task_num && nr_pages_limit > 0; i++) {
 		print_task(tasks[i]);
 		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 	}
@@ -95,19 +97,20 @@ static void report_task_top (void) {
 };
 
 static void report_task_top_json(void) {
-	struct Task **tasks;
+	int task_num;
 	long nr_pages_limit;
+	struct Task **tasks;
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
 	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-	tasks = collect_tasks_sorted(0);
+	tasks = collect_tasks_sorted(0, &task_num);
 
 	log_info("[\n");
-	for (int i = 0; i < task_map.size && nr_pages_limit > 0; i++) {
+	for (int i = 0; i < task_num && nr_pages_limit > 0; i++) {
 		print_task_json(tasks[i]);
 		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc_peak;
 
-		if (i + 1 < task_map.size && nr_pages_limit)
+		if (i + 1 < task_num && nr_pages_limit)
 			log_info(",\n");
 		else
 			log_info("\n");
@@ -131,7 +134,7 @@ struct reporter_table_t  reporter_table[] = {
 
 int report_table_size = sizeof(reporter_table) / sizeof(struct reporter_table_t);
 
-void final_report(struct HashMap *task_map, char *type, int task_limit) {
+void final_report(char *type, int task_limit) {
 	load_kallsyms();
 
 	char *report_type;

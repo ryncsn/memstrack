@@ -99,8 +99,7 @@ static void update_top_tracenodes(void) {
 
 	// TODO: No need to free / alloc every time
 	if (ui_type == UI_TYPE_TASK) {
-		top_tracenodes = (struct Tracenode**) collect_tasks_sorted(1);
-		tracenode_num = task_map.size;
+		top_tracenodes = (struct Tracenode**) collect_tasks_sorted(1, &tracenode_num);
 	} else {
 		top_tracenodes = (struct Tracenode**) collect_modules_sorted(1);
 		tracenode_num = module_map.size;

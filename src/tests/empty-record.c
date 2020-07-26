@@ -1,14 +1,15 @@
 #include "unittesdt.h"
 
 int test(void) {
+	int task_num;
 	struct Task** tasks;
 
 	mem_tracing_init();
 
-	get_or_new_task("task1", 1000);
-	tasks = collect_tasks_sorted(0);
+	get_or_new_task_with_name(1000, "task1");
+	tasks = collect_tasks_sorted(0, &task_num);
 
-	assert(task_map.size == 1);
+	assert(task_num == 1);
 	assert(to_tracenode(tasks[0])->record->pages_alloc == 0);
 
 	return 0;

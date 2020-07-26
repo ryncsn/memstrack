@@ -150,17 +150,15 @@ char* get_tracenode_symbol(struct Tracenode *node) {
 		return kaddr_to_sym(node->addr);
 }
 
-static unsigned int comp_task(const struct HashNode *hnode, const void *key) {
-	const struct Task *lht = container_of(hnode, struct Task, node);
-	const struct Task *rht = key;
-	int diff = lht->pid - rht->pid;
-	if (!diff && rht->task_name && lht->task_name)
-		diff = strcmp(lht->task_name, rht->task_name);
-	return diff;
+static unsigned int comp_task(const struct HashNode *hnode, const void* key) {
+	const struct Task *task = container_of(hnode, struct Task, node);
+	long pid = *(long*)key;
+
+	return task->pid - pid;
 }
 
 static unsigned int hash_task(const void *key) {
-	int hash = ((struct Task *)key)->pid;
+	long hash = *(long*)key;
 
 	// for (int i = 0; i < (int)strlen(((struct Task*)task)->task_name); ++i) {
 	// 	hash = hash * 31 + ((struct Task*)task)->task_name[i];
@@ -169,7 +167,8 @@ static unsigned int hash_task(const void *key) {
 	return hash;
 }
 
-HASH_MAP(hash_task, comp_task, task_map);
+static HASH_MAP(hash_task, comp_task, active_task_map);
+static HASH_MAP(hash_task, comp_task, exited_task_map);
 
 struct PageRecord *page_map;
 
@@ -464,13 +463,18 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 	return tracenode;
 }
 
-static struct Task* try_get_task(char* task_name, long pid) {
-	struct Task task_key;
-	struct HashNode *hnode;
+static struct Task* new_task(long pid) {
+	struct Task *task = (struct Task*)calloc(1, sizeof(struct Task));
+	task->pid = pid;
 
-	task_key.pid = pid;
-	task_key.task_name = task_name;
-	hnode = get_hash_node(&task_map, &task_key);
+	insert_hash_node(&active_task_map, &task->node, &pid);
+
+	return task;
+}
+
+static struct Task* try_get_task(long pid) {
+	struct HashNode *hnode;
+	hnode = get_hash_node(&active_task_map, &pid);
 
 	if (hnode) {
 		return container_of(
@@ -482,28 +486,68 @@ static struct Task* try_get_task(char* task_name, long pid) {
 	}
 };
 
-// TODO:
-// task_exit to clean up exited task, so memstrack can run for a longer time reliablely
+struct Task* task_exit(long pid) {
+	struct HashNode *hnode;
+	hnode = get_remove_hash_node(&active_task_map, &pid);
 
-struct Task* get_or_new_task(char* task_name, int pid) {
+	if (hnode) {
+		return container_of(
+				hnode,
+				struct Task,
+				node);
+	} else {
+		return NULL;
+	}
+}
+
+struct Task* get_or_new_task(long pid) {
 	struct Task *task;
-	task = try_get_task(task_name, pid);
+	task = try_get_task(pid);
 
-	if (task == NULL) {
-		task = (struct Task*)calloc(1, sizeof(struct Task));
-		task->pid = pid;
-
-		if (task_name)
-			task->task_name = strdup(task_name);
-		else
-			task->task_name = get_process_name_by_pid(pid);
-
-		insert_hash_node(&task_map, &task->node, task);
-		return task;
+	if (!task) {
+		task = new_task(pid);
+		refresh_task_name(task);
 	}
 
 	return task;
 };
+
+struct Task* get_or_new_task_with_name(long pid, char* name) {
+	struct Task *task;
+	task = try_get_task(pid);
+
+	if (!task) {
+		task = new_task(pid);
+	} else if (task->task_name) {
+		if (strcmp(task->task_name, name)) {
+			/* If name is different, consider previous task exited */
+			task_exit(pid);
+			task = new_task(pid);
+		} else {
+			return task;
+		}
+	}
+
+	task->task_name = strdup(name);
+	return task;
+};
+
+void refresh_task_name(struct Task* task) {
+	if (task->task_name) {
+		free(task->task_name);
+		task->task_name = NULL;
+	}
+
+	task->task_name = get_process_name_by_pid(task->pid);
+}
+
+int get_total_tasks_num(void) {
+	return active_task_map.size + exited_task_map.size;
+}
+
+int get_active_tasks_num(void) {
+	return active_task_map.size;
+}
 
 struct json_marker {
 	int indent;
@@ -769,13 +813,13 @@ static int comp_task_mem(const void *x, const void *y) {
 	}
 }
 
-struct Task **collect_tasks_sorted(int shallow) {
+struct Task **collect_tasks_sorted(int shallow, int *count) {
 	struct HashNode *hnode = NULL;
 	struct Task **tasks;
 	int i = 0;
 
-	tasks = malloc(task_map.size * sizeof(struct Task*));
-	for_each_hnode(&task_map, hnode) {
+	tasks = malloc(active_task_map.size * sizeof(struct Task*));
+	for_each_hnode(&active_task_map, hnode) {
 		tasks[i] = container_of(hnode, struct Task, node);
 
 		if (shallow)
@@ -786,8 +830,9 @@ struct Task **collect_tasks_sorted(int shallow) {
 		i++;
 	}
 
-	qsort((void*)tasks, task_map.size, sizeof(struct Task*), comp_task_mem);
+	qsort((void*)tasks, active_task_map.size, sizeof(struct Task*), comp_task_mem);
 
+	*count = active_task_map.size;
 	return tasks;
 }
 
@@ -1019,7 +1064,7 @@ struct Module **collect_modules_sorted(int shallow) {
 	int i = 0;
 
 	if (!shallow) {
-		for_each_hnode(&task_map, hnode) {
+		for_each_hnode(&active_task_map, hnode) {
 			task = container_of(hnode, struct Task, node);
 			if (to_tracenode(task)->children)
 				for_each_tracenode(to_tracenode(task)->children, do_gather_tracenodes_by_module, NULL);

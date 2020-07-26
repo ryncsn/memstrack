@@ -27,7 +27,7 @@
 
 typedef void* trace_addr_t;
 
-extern struct HashMap task_map, module_map;
+extern struct HashMap module_map;
 
 extern unsigned long trace_count;
 extern unsigned long page_alloc_counter, page_free_counter;
@@ -114,8 +114,13 @@ void depopulate_tracenode(struct Tracenode* tracenode);
 
 struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);
-struct Task* get_or_new_task(char* task_name, int pid);
-struct Task **collect_tasks_sorted(int shallow);
+
+struct Task* task_exit(long pid);
+struct Task* get_or_new_task(long pid);
+struct Task* get_or_new_task_with_name(long pid, char* task_name);
+struct Task **collect_tasks_sorted(int shallow, int *count);
+void refresh_task_name(struct Task* task);
+
 struct Module **collect_modules_sorted(int shallow);
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 struct Module *get_or_new_module(char *name);

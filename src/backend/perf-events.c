@@ -158,7 +158,7 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 			event.pages_alloc *= 2;
 		}
 
-		task = get_or_new_task(NULL, pid);
+		task = get_or_new_task(pid);
 
 		__process_stacktrace(callchain, task, &event);
 	}
@@ -205,7 +205,7 @@ static int perf_handle_module_load(const unsigned char* header) {
 	char *name = (char*)get_data_p_from_raw(raw) + value.offset;
 	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
 
-	task = get_or_new_task(NULL, pid);
+	task = get_or_new_task(pid);
 	task->module_loading = strdup(name);
 
 	// TODO: On event lost, remove all module_loading
@@ -223,7 +223,7 @@ static int perf_handle_sys_exit_init_module(const unsigned char* header) {
 	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
 
 	log_debug("Module loading exit\n");
-	task = get_or_new_task(NULL, pid);
+	task = get_or_new_task(pid);
 	if (!task->module_loading) {
 		log_debug("Ignoring sys_exit_init_module of task %ld\n", task->pid);
 	} else {
