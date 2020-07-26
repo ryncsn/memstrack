@@ -38,7 +38,7 @@
 #define MAX_VIEW 300
 #define UI_FD_NUMS 2
 
-struct TracenodeView {
+struct TracenodeViewData {
 	bool expended;
 };
 
@@ -88,28 +88,28 @@ void tui_apply_fds(struct pollfd *fds) {
 	ui_fds = fds;
 }
 
-static struct Tracenode **sorted_tracenodes;
+static struct Tracenode **top_tracenodes;
 static int tracenode_num;
 
-static void update_top_tracenodes() {
+static void update_top_tracenodes(void) {
 	struct Record *record;
 
-	if (sorted_tracenodes)
-		free(sorted_tracenodes);
+	if (top_tracenodes)
+		free(top_tracenodes);
 
 	// TODO: No need to free / alloc every time
 	if (ui_type == UI_TYPE_TASK) {
-		sorted_tracenodes = (struct Tracenode**) collect_tasks_sorted(1);
+		top_tracenodes = (struct Tracenode**) collect_tasks_sorted(1);
 		tracenode_num = task_map.size;
 	} else {
-		sorted_tracenodes = (struct Tracenode**) collect_modules_sorted(1);
+		top_tracenodes = (struct Tracenode**) collect_modules_sorted(1);
 		tracenode_num = module_map.size;
 	}
 
 	for (int i = 0; i < tracenode_num; ++i) {
-		record = (sorted_tracenodes[i])->record;
+		record = (top_tracenodes[i])->record;
 		if (!record->blob)
-			record->blob = calloc(1, sizeof(struct TracenodeView));
+			record->blob = calloc(1, sizeof(struct TracenodeViewData));
 	}
 };
 
@@ -133,7 +133,7 @@ struct {
 
 static int try_extend_tracenode(struct Tracenode *node, int *curr_line) {
 	struct Tracenode** nodes;
-	struct TracenodeView *view;
+	struct TracenodeViewData *view;
 	int count, ret = 0;
 
 	if (!curr_line)
@@ -143,7 +143,7 @@ static int try_extend_tracenode(struct Tracenode *node, int *curr_line) {
 		return ret;
 
 	if (!node->record->blob)
-		node->record->blob = calloc(1, sizeof(struct TracenodeView));
+		node->record->blob = calloc(1, sizeof(struct TracenodeViewData));
 
 	view = node->record->blob;
 
@@ -173,14 +173,14 @@ static void expend_line(int line) {
 	int curr_line = 0;
 
 	for (int i = 0; i < tracenode_num; ++i) {
-		if (try_extend_tracenode(sorted_tracenodes[i], &curr_line))
+		if (try_extend_tracenode(top_tracenodes[i], &curr_line))
 			break;
 	}
 }
 
 static int tui_print_tracenode(WINDOW *tracewin, struct Tracenode *node, int indent) {
 	struct Tracenode** nodes;
-	struct TracenodeView *view;
+	struct TracenodeViewData *view;
 
 	int count, ret = 0;
 	char expand_sym;
@@ -189,7 +189,7 @@ static int tui_print_tracenode(WINDOW *tracewin, struct Tracenode *node, int ind
 		return ret;
 
 	if (!node->record->blob)
-		node->record->blob = calloc(1, sizeof(struct TracenodeView));
+		node->record->blob = calloc(1, sizeof(struct TracenodeViewData));
 
 	view = node->record->blob;
 
@@ -258,13 +258,11 @@ static void update_tracewin(WINDOW *tracewin) {
 		mvwprintw(tracewin, 0, 1, "    Pages    |    Module Name   \n");
 	}
 
-	update_top_tracenodes();
-
 	tui_info.current = 0;
 
 	// TODO: only work when it's single thread
 	for (int task_n = 0; task_n < tracenode_num; ++task_n) {
-		if (tui_print_tracenode(tracewin, sorted_tracenodes[task_n], 0))
+		if (tui_print_tracenode(tracewin, top_tracenodes[task_n], 0))
 			return;
 	}
 }
@@ -372,13 +370,16 @@ void tui_loop(void) {
 				break;
 		}
 
+		update_top_tracenodes();
 		update_ui(trace_win);
 	}
 
 	if (ui_fds[1].revents & POLLIN) {
 		uint64_t time;
 		ret = read(ui_fds[1].fd, &time, sizeof(time));
-		if (ret)
+		if (ret) {
+			update_top_tracenodes();
 			update_ui(trace_win);
+		}
 	}
 }
