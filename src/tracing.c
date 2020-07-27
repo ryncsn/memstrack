@@ -472,7 +472,7 @@ static struct Task* new_task(long pid) {
 	return task;
 }
 
-static struct Task* try_get_task(long pid) {
+struct Task* try_get_task(long pid) {
 	struct HashNode *hnode;
 	hnode = get_hash_node(&active_task_map, &pid);
 

@@ -76,6 +76,18 @@ DefineEvent(
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
+DefineEvent(
+	syscalls, sys_exit_execve, 8,
+	PERF_SAMPLE_RAW,
+	IncludeCommonEventFields());
+	// EventField(int, __syscall_nr);
+
+DefineEvent(
+	syscalls, sys_exit_execveat, 8,
+	PERF_SAMPLE_RAW,
+	IncludeCommonEventFields());
+	// EventField(int, __syscall_nr);
+
 static struct Tracenode* __process_stacktrace_mod(
 		struct perf_sample_callchain *callchain,
 		struct Task *task, struct PageEvent *event, char *mod)
@@ -234,6 +246,21 @@ static int perf_handle_sys_exit_init_module(const unsigned char* header) {
 	return 0;
 }
 
+static int perf_handle_process_exec(const unsigned char* header) {
+	struct Task *task;
+	struct perf_sample_raw *raw;
+
+	raw = (struct perf_sample_raw*)(header + sizeof(struct perf_event_header));
+
+	int pid = read_data_from_perf_raw(module_load, common_pid, int, raw);
+
+	task = try_get_task(pid);
+	if (task) {
+		refresh_task_name(task);
+	}
+
+	return 0;
+}
 
 static int always_enable(void) { return 1; }
 
@@ -243,6 +270,8 @@ const struct perf_event_table_entry perf_event_table[] = {
 	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable },
 //	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
 	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
+	{ &get_perf_event(sys_exit_execve),		perf_handle_process_exec,	always_enable },
+	{ &get_perf_event(sys_exit_execveat),		perf_handle_process_exec,	always_enable },
 };
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);

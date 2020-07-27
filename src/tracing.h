@@ -115,6 +115,7 @@ void depopulate_tracenode(struct Tracenode* tracenode);
 struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);
 
+struct Task* try_get_task(long pid);
 struct Task* task_exit(long pid);
 struct Task* get_or_new_task(long pid);
 struct Task* get_or_new_task_with_name(long pid, char* task_name);
