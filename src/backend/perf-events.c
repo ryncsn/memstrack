@@ -50,7 +50,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 128,
+	kmem, mm_page_free, 256,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),

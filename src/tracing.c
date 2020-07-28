@@ -174,30 +174,35 @@ struct PageRecord *page_map;
 
 static char* get_process_name_by_pid(const int pid)
 {
+
 	char fname_buf[sizeof("/proc//cmdline") + 20 + 1];
-	char *buf = NULL;
+	char read_buf[1024];
 	FILE *f;
 
 	sprintf(fname_buf, "/proc/%d/cmdline", pid);
 	f = fopen(fname_buf, "r");
 	if (f) {
-		size_t len;
 		ssize_t read;
-		read = getline(&buf, &len, f);
+		read = fread(&read_buf, 1, 1024, f);
 		fclose(f);
 
-		if (read > 0) {
-			return buf;
-		} else if (buf) {
-			free(buf);
-			buf = NULL;
+		if (read != 0) {
+			read_buf[read] = '\0';
+
+			for (int i = 0; i < read - 1; ++i) {
+				if (read_buf[i] == '\0') {
+					read_buf[i] = ' ';
+				}
+			}
+
+			return strdup(read_buf);
 		}
 	}
 
 	log_debug("Failed to retrive process name of %d\n", pid);
-	sprintf(fname_buf, "(%d)", pid);
+	sprintf(read_buf, "(%d)", pid);
 
-	return strdup(fname_buf);
+	return strdup(read_buf);
 }
 
 void mem_tracing_init() {
