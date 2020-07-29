@@ -100,8 +100,9 @@ struct PageEvent {
 };
 
 void mem_tracing_init();
-void update_record(struct Tracenode *record, struct PageEvent *pe);
-void try_update_record(struct Tracenode *record, struct PageEvent *pe);
+void update_record(struct PageEvent *pevent);
+void update_tracenode_record(struct Tracenode *tracenode, struct PageEvent *pevent);
+void update_tracenode_record_shallow(struct Tracenode *tracenode, struct PageEvent *pevent);
 void load_kallsyms();
 void store_symbol_instead(void);
 void need_page_free_always_backtrack(void);

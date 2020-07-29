@@ -128,10 +128,10 @@ static struct Tracenode* __process_stacktrace() {
 
 	if (tp == NULL) {
 		tp = get_or_new_child_tracenode(to_tracenode(task), strdup(callsite));
-		try_update_record(to_tracenode(task), &pevent);
+		update_tracenode_record_shallow(to_tracenode(task), &pevent);
 	} else {
 		tp = get_or_new_child_tracenode(tp, strdup(callsite));
-		try_update_record(tp, &pevent);
+		update_tracenode_record_shallow(tp, &pevent);
 	}
 
 	return tp;
@@ -233,7 +233,7 @@ static void do_ftrace_process() {
 
 			// New leaf
 			if (!tn->record)
-				update_record(tn, &pevent);
+				update_tracenode_record(tn, &pevent);
 
 			task = NULL;
 		}

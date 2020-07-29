@@ -276,25 +276,30 @@ static int is_droppable_record(struct Record *record) {
 	return 0;
 }
 
-static void tracenode_gc(struct Tracenode *tracenode) {
+static int tracenode_gc(struct Tracenode *tracenode) {
 	/* Ensure record is either dropped or droppable */
+	int ret = 0;
 	if (tracenode->record) {
 		if (is_droppable_record(tracenode->record)) {
 			free_tracenode_record(tracenode);
+			ret = 1;
 		} else {
-			return;
+			return 0;
 		}
 	}
 
 	/* Only clean up record for top nodes */
 	if (!tracenode->parent) {
 		tracenode->record = NULL;
-		return;
+		return 0;
 	}
 
 	if (!tracenode->children) {
 		free_tracenode(tracenode);
+		ret = 1;
 	}
+
+	return ret;
 }
 
 /*
@@ -312,13 +317,12 @@ static void do_record_page_free(struct Tracenode *tracenode, int nr_pages) {
 			/* This may happen due to missing event */
 			if (tracenode->record->pages_alloc < 0)
 				tracenode->record->pages_alloc = 0;
-
-			if (!page_free_always_backtrack) {
-				break;
-			}
 		}
 
-		tracenode_gc(tracenode);
+		if (!tracenode_gc(tracenode) &&
+				!page_free_always_backtrack)
+			break;
+
 		tracenode = parent;
 	}
 }
@@ -357,7 +361,7 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
  */
 static void record_page_alloc(struct Tracenode *root, unsigned long pfn_start, unsigned long nr_pages) {
 	if (pfn_start > max_pfn) {
-		log_error ("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
+		log_error("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
 		return;
 	}
 
@@ -412,19 +416,27 @@ static void do_update_record(struct Tracenode *tracenode, struct PageEvent *peve
 	}
 }
 
-void update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
-	if (tracenode && !tracenode->record) {
+void update_record(struct PageEvent *pevent) {
+	do_update_record(NULL, pevent);
+}
+
+void update_tracenode_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
+	if (!tracenode->record) {
 		tracenode->record = calloc(1, sizeof(struct Record));
 	}
 
 	do_update_record(tracenode, pevent);
 }
 
-void try_update_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
-	if (tracenode && tracenode->record)
-		do_update_record(tracenode, pevent);
+void update_tracenode_record_shallow(struct Tracenode *tracenode, struct PageEvent *pevent) {
+	struct Record *record = tracenode->record;
+	if (record) {
+		record->pages_alloc += pevent->pages_alloc;
+		if (record->pages_alloc > record->pages_alloc_peak) {
+			record->pages_alloc_peak = record->pages_alloc;
+		}
+	}
 }
-
 
 struct Tracenode* get_child_tracenode(struct Tracenode *tnode, void *key) {
 	if (tnode->children == NULL) {

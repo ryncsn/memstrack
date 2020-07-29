@@ -97,11 +97,11 @@ static struct Tracenode* __process_stacktrace_mod(
 
 	for (int i = 1; i < (int)callchain->nr; i++) {
 		trace_addr_t addr = (trace_addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
-		try_update_record(tp, event);
+		update_tracenode_record_shallow(tp, event);
 		tp = get_or_new_child_tracenode(tp, addr);
 	}
 
-	update_record(tp, event);
+	update_tracenode_record(tp, event);
 	return tp;
 }
 
@@ -117,11 +117,11 @@ static struct Tracenode* __process_stacktrace(
 
 	for (int i = 1; i < (int)callchain->nr; i++) {
 		trace_addr_t addr = (trace_addr_t) *((&callchain->ips) + ((int)callchain->nr - i));
-		try_update_record(tp, event);
+		update_tracenode_record_shallow(tp, event);
 		tp = get_or_new_child_tracenode(tp, addr);
 	}
 
-	update_record(tp, event);
+	update_tracenode_record(tp, event);
 	return tp;
 }
 
@@ -198,7 +198,7 @@ static int perf_handle_mm_page_free(const unsigned char* header) {
 		event.pages_alloc *= 2;
 	}
 
-	update_record(NULL, &event);
+	update_record(&event);
 
 	return 0;
 }

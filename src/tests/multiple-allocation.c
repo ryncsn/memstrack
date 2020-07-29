@@ -17,24 +17,24 @@ int test(void) {
 	tracenode = get_or_new_child_tracenode(to_tracenode(task), (void*)0x100000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x110000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x111000);
-	update_record(tracenode, &event);
+	update_tracenode_record(tracenode, &event);
 
 	tracenode = get_or_new_child_tracenode(to_tracenode(task), (void*)0x100000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x110000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x111000);
 	event.pfn += 1024;
-	update_record(tracenode, &event);
+	update_tracenode_record(tracenode, &event);
 
 	tracenode = get_or_new_child_tracenode(to_tracenode(task), (void*)0x100000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x120000);
 	event.pfn += 1024;
-	update_record(tracenode, &event);
+	update_tracenode_record(tracenode, &event);
 
 	task = get_or_new_task_with_name(1001, "task2");
 	tracenode = get_or_new_child_tracenode(to_tracenode(task), (void*)0x100000);
 	tracenode = get_or_new_child_tracenode(tracenode, (void*)0x120000);
 	event.pfn += 1024;
-	update_record(tracenode, &event);
+	update_tracenode_record(tracenode, &event);
 
 	tasks = collect_tasks_sorted(0, &task_num);
 
