@@ -13,6 +13,9 @@ And can generate reports of memory allocation and usage of a long period.
 
 A example report, which shows the memory usage summary of a typical kdump run on Fedora 32 in a KVM VM:
 ```sh
+# Following report is genereted with
+# `memstrack --report module_summary,module_top --notui --throttle 80`
+
 ======== Report format module_summary: ========
 Module squashfs using 26.8MB (6868 pages), peak allocation 35.1MB (8976 pages)
 Module virtio_console using 1.5MB (377 pages), peak allocation 1.5MB (377 pages)
