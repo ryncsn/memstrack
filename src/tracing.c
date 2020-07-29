@@ -186,8 +186,8 @@ static char* get_process_name_by_pid(const int pid)
 		read = fread(&read_buf, 1, 1024, f);
 		fclose(f);
 
-		if (read != 0) {
-			read_buf[read] = '\0';
+		if (read > 0) {
+			read_buf[read - 1] = '\0';
 
 			for (int i = 0; i < read - 1; ++i) {
 				if (read_buf[i] == '\0') {
