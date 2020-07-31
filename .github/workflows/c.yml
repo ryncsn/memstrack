@@ -1,0 +1,24 @@
+name: C/C++ CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: make
+      run: make
+    - name: make test
+      run: make test
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        # Artifact name
+        name: memstrack
+        # A file, directory or wildcard pattern that describes what to upload
+        path: memstrack
