@@ -11,6 +11,8 @@ trap '
 rm -rf $MEMSTRACK_OUTPUT
 ' EXIT
 
+wait_timeout=10
+
 for i in ftrace perf; do
     $MEMSTRACK_BIN \
         --report module_summary,module_top,task_summary,task_top,task_top_json,proc_slab_static \
@@ -35,8 +37,16 @@ for i in ftrace perf; do
 
     kill -INT $MEMSTRACK_PID
 
+    wait_time=0
     while [ "$(jobs -r)" ]; do
         sleep 1
+        echo "TEST: waiting for memstrack to exit..."
+        wait_time=$(( wait_time + 1 ))
+        if [ $wait_time -ge $wait_timeout ]; then
+            kill -KILL $MEMSTRACK_PID
+            echo "ERROR: memstrack hanged generating reports"
+            exit 1
+        fi
     done
 
     if [ ! -s $MEMSTRACK_OUTPUT ]; then
