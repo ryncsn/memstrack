@@ -39,7 +39,7 @@
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
 DefineEvent(
-	kmem, mm_page_alloc, 512,
+	kmem, mm_page_alloc, 1024,
 	PERF_SAMPLE_RAW | PERF_SAMPLE_CALLCHAIN,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -50,7 +50,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 256,
+	kmem, mm_page_free, 1024,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -66,25 +66,19 @@ DefineEvent(
 
 DefineEvent(
 	syscalls, sys_enter_init_module, 8,
-	PERF_SAMPLE_RAW,
+	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
 	syscalls, sys_exit_init_module, 8,
-	PERF_SAMPLE_RAW,
+	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_execve, 8,
-	PERF_SAMPLE_RAW,
-	IncludeCommonEventFields());
-	// EventField(int, __syscall_nr);
-
-DefineEvent(
-	syscalls, sys_exit_execveat, 8,
-	PERF_SAMPLE_RAW,
+	sched, sched_process_exec, 8,
+	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
@@ -270,8 +264,7 @@ const struct perf_event_table_entry perf_event_table[] = {
 	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable },
 //	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
 	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
-	{ &get_perf_event(sys_exit_execve),		perf_handle_process_exec,	always_enable },
-	{ &get_perf_event(sys_exit_execveat),		perf_handle_process_exec,	always_enable },
+	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,	always_enable },
 };
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);
