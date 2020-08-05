@@ -99,7 +99,7 @@ struct PageEvent {
 	long pages_alloc;
 };
 
-void mem_tracing_init();
+int mem_tracing_init();
 void update_record(struct PageEvent *pevent);
 void update_tracenode_record(struct Tracenode *tracenode, struct PageEvent *pevent);
 void update_tracenode_record_shallow(struct Tracenode *tracenode, struct PageEvent *pevent);

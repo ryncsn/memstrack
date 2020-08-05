@@ -321,7 +321,9 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	mem_tracing_init();
+	if (mem_tracing_init()) {
+		exit(1);
+	}
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);

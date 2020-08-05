@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "memstrack.h"
 #include "tracing.h"
@@ -205,7 +206,7 @@ static char* get_process_name_by_pid(const int pid)
 	return strdup(read_buf);
 }
 
-void mem_tracing_init() {
+int mem_tracing_init() {
 	// unsigned long total_pages;
 	struct zone_info *zone, *tmp;
 
@@ -230,8 +231,16 @@ void mem_tracing_init() {
 		free(tmp);
 	}
 
-	// TODO: handle holes to save memory
-	page_map = calloc(max_pfn, sizeof(struct PageRecord));
+	// with MAP_ANONYMOUS and MAP_NORESERVE, it can alloc more virtual memory
+	// than actually available memory. So even big memory hole that make the map large that avaiable memory
+	// won't be a problem, and kernel should ensure its contents are initialized to zero on read.
+	page_map = mmap(NULL, max_pfn * sizeof(struct PageRecord), PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE|MAP_NORESERVE, -1, 0);
+	if (page_map == MAP_FAILED) {
+		log_error("Failed to create page map\n");
+		return -1;
+	}
+
+	return 0;
 }
 
 static int compTracenode(const struct TreeNode *root, const void *key) {
