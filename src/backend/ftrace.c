@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <poll.h>
+#include <malloc.h>
 
 #include "../memstrack.h"
 #include "../tracing.h"
@@ -55,11 +56,12 @@ int ftrace_read_next_valid_line(char *buffer, int size, FILE *trace_file) {
 	char *ret = NULL;
 	do {
 		ret = fgets(buffer, size, trace_file);
-	}
-	while (ret && ret[0] == '#');
+	} while (ret && ret[0] == '#');
+
 	if (strstr(buffer, "LOST")) {
 		log_error("%s", buffer);
 	}
+
 	return !!ret;
 }
 
@@ -118,6 +120,7 @@ static struct Tracenode* __process_stacktrace() {
 	struct Tracenode *tp = NULL;
 	char callsite[MAX_SYMBOL], *callsite_arg = NULL;
 	int callsite_len = 0;
+	char *key;
 	callsite_arg = ftrace_line + strlen(FTRACE_STACK_TRACE_SIGN);
 	callsite_len = strnlen(callsite_arg, MAX_SYMBOL);
 	strncpy(callsite, callsite_arg, MAX_SYMBOL);
@@ -126,13 +129,17 @@ static struct Tracenode* __process_stacktrace() {
 	// Process next traceline
 	tp = __process_stacktrace();
 
+	key = strdup(callsite);
 	if (tp == NULL) {
-		tp = get_or_new_child_tracenode(to_tracenode(task), strdup(callsite));
+		tp = get_or_new_child_tracenode(to_tracenode(task), key);
 		update_tracenode_record_shallow(to_tracenode(task), &pevent);
 	} else {
-		tp = get_or_new_child_tracenode(tp, strdup(callsite));
+		tp = get_or_new_child_tracenode(tp, key);
 		update_tracenode_record_shallow(tp, &pevent);
 	}
+
+	if (tp->key != key)
+		free(key);
 
 	return tp;
 }
