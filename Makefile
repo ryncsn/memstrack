@@ -8,9 +8,9 @@ bindir ?= ${prefix}/bin
 mandir ?= ${prefix}/share/man
 dracutlibdir ?= ${prefix}/lib/dracut
 
-CC = gcc
+CC := gcc
 CFLAGS := -Os -g -std=c11 -fPIC $(CFLAGS)
-LDFLAGS := $(LDFLAGS)
+LDFLAGS := $(LDFLAGS) -Wl,--as-needed
 LIBS := -lncurses -ltinfo -ldl
 
 include src/Makefile
