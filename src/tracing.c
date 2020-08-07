@@ -369,11 +369,6 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
  * Should only be called against top of the stack
  */
 static void record_page_alloc(struct Tracenode *root, unsigned long pfn_start, unsigned long nr_pages) {
-	if (pfn_start > max_pfn) {
-		log_error("BUG: alloc pfn %lu out of max_pfn %lu\n", pfn_start, max_pfn);
-		return;
-	}
-
 	unsigned long pfn_off;
 	struct Record *record = root->record;
 	struct Tracenode *last_missed_tracenode = NULL;
