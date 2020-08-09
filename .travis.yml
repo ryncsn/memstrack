@@ -3,8 +3,34 @@ sudo: true
 before_install:
   - sudo apt-get -y install libncurses-dev
 script:
-  - CFLAGS="-coverage -O0" make
-  - CFLAGS="-coverage -O0" make test
-  - find -name "*.c" -exec gcov \{\} \;
+  - sudo docker build --build-arg BASE_IMAGE=$BASE_IMAGE -t builder misc/docker
+  - sudo docker run -it -v ./:/mnt builder bash -c 'CFLAGS="-coverage -O0" make'
+  - sudo docker run -it -v ./:/mnt builder bash -c 'CFLAGS="-coverage -O0" make test'
+  - sudo docker run -it -v ./:/mnt builder bash -c 'find -name "*.c" -exec gcov \{\} \;'
+  - sudo docker run -it -v ./:/mnt builder bash -c 'make clean && make LDFLAGS=-static memstrack'
+  - mv memstrack memstrack-linux-$(arch)
 after_success:
   - bash <(curl -s https://codecov.io/bash)
+# deploy:
+#   provider: releases
+#   api_key: $TOKEN
+#   file: "memstrack"
+#   skip_cleanup: true
+#   on:
+#     tags: true
+#     branches:
+#       only:
+#         - master
+services:
+  - docker
+jobs:
+  include:
+    - arch: amd64
+      env: BASE_IMAGE=ubuntu
+    - arch: ppc64le
+      env: BASE_IMAGE=ubuntu
+    - arch: arm64
+      env: BASE_IMAGE=arm64v8/ubuntu
+    - arch: arm64
+      build_image: arm32v7
+      env: BASE_IMAGE=arm32v7/ubuntu
