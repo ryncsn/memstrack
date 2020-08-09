@@ -1,36 +1,42 @@
 language: c
 sudo: true
 before_install:
-  - sudo apt-get -y install libncurses-dev
 script:
   - sudo docker build --build-arg BASE_IMAGE=$BASE_IMAGE -t builder misc/docker
-  - sudo docker run -it -v ./:/mnt builder bash -c 'CFLAGS="-coverage -O0" make'
-  - sudo docker run -it -v ./:/mnt builder bash -c 'CFLAGS="-coverage -O0" make test'
-  - sudo docker run -it -v ./:/mnt builder bash -c 'find -name "*.c" -exec gcov \{\} \;'
-  - sudo docker run -it -v ./:/mnt builder bash -c 'make clean && make LDFLAGS=-static memstrack'
-  - mv memstrack memstrack-linux-$(arch)
+  - bash -c '[[ "$NO_TEST" -eq 1 ]] || sudo apt-get -y install make gcc sudo libncurses-dev'
+  - bash -c '[[ "$NO_TEST" -eq 1 ]] || CFLAGS="-coverage -O0" make test'
+  - bash -c '[[ "$NO_COV" -eq 1 ]] || find -name "*.c" -exec gcov \{\} \;'
+  - sudo docker run -v $(pwd):/mnt builder bash -c 'make clean && make LDFLAGS=-static memstrack'
+  - mv memstrack $OUTPUT
+  - sha1sum $OUTPUT > $OUTPUT.sha1sum
 after_success:
-  - bash <(curl -s https://codecov.io/bash)
-# deploy:
-#   provider: releases
-#   api_key: $TOKEN
-#   file: "memstrack"
-#   skip_cleanup: true
-#   on:
-#     tags: true
-#     branches:
-#       only:
-#         - master
+  - bash -c '[[ "$NO_COV" -eq 1 ] || bash <(curl -s https://codecov.io/bash)'
+deploy:
+  provider: releases
+  api_key:
+    secure: VcWyQsNOQziOU9Ae/tfaSh1EauNHPh8FHfFa4miU0rv6ZvcZt0lcBhcAGSCDh5A8OXUvZewXZLXrS3B71BE+85L1TOQ6ABcjT/kmuaDxfuCv3+XiWw+L005k71vxQKcNjtK1+y86gofvsCQobdHI3MUJpXPThb4EUOV9j5f3JHR70M/u1rzMvkTCRg/900jteQile3egAIrFgV8elxyBX60frzMvboNTscxN7TbQbI6HvdZqxwsUADOKArlWpXoLThNVHCwArgPAcLjqP95ogxWQC00pC0fTz0NaYIwYzV6Kcl8zwHfJGn/KyE6rgIsICScGYwRtd6mQd8HFK2LGDu3STStEFnZLtG2VaiUQlERVXuHyvXHpNCS8gjvi4SeGhZINUgs6bQ8lT/7QYWbmCwNy6237Rtnr/s+CCIFaWXKroiiRLyvuaDWZWqxf740qzNeCwDnAURBftzfhxfBQgmjRx/jb2YJUOFPsQewZU9obnQBFYVdMccgrDYPw3F0Ak6ttL4mD77ZoalT2wfKlDbop5taV0pCoNnf0pvG1olXS0B+U4QV5/Au/gUEKcfGfUSXl0/fMwAWo1YciV3zynxODgpJYgKE0Uc2orysR5n6sSGSRLnCI/5AzBUiLriDi6IBfD3oaXtbmZFCODSJIOrEImYePQqcnDcoo6kaKCAc=
+  file_glob: true
+  files: memstrack-linux-*
+  on:
+    repo: ryncsn/memstrack
+  skip_cleanup: 'true'
+  on:
+    tags: true
+    all_branches: true
+      # branches:
+      #   only:
+      #     - master
+      #     - devel
 services:
   - docker
 jobs:
   include:
     - arch: amd64
-      env: BASE_IMAGE=ubuntu
+      env: BASE_IMAGE=ubuntu OUTPUT=memstrack-linux-amd64
     - arch: ppc64le
-      env: BASE_IMAGE=ubuntu
+      # Test can't run on ppc64le, arm64 on Travis, seems it doesn't have /sys/kernel/debug access, kernel config not enabled?
+      env: BASE_IMAGE=ubuntu OUTPUT=memstrack-linux-ppc64le NO_COV=1 NO_TEST=1
     - arch: arm64
-      env: BASE_IMAGE=arm64v8/ubuntu
+      env: BASE_IMAGE=arm64v8/ubuntu OUTPUT=memstrack-linux-arm64 NO_COV=1 NO_TEST=1
     - arch: arm64
-      build_image: arm32v7
-      env: BASE_IMAGE=arm32v7/ubuntu
+      env: BASE_IMAGE=arm32v7/debian OUTPUT=memstrack-linux-armv7 NO_COV=1 NO_TEST=1
