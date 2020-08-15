@@ -82,6 +82,8 @@ DefineEvent(
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
+static unsigned char *trampo_page;
+
 static struct Tracenode* __process_stacktrace_mod(
 		struct perf_sample_callchain *callchain,
 		struct Task *task, struct PageEvent *event, char *mod)
@@ -369,6 +371,8 @@ int perf_ring_start_sampling(struct PerfEventRing *ring) {
 		log_error("Failed to start perf sampling!\n");
 	}
 
+	trampo_page = malloc(page_size);
+
 	return ret;
 }
 
@@ -413,47 +417,72 @@ static int perf_handle_lost_event(const unsigned char* header, int cpu, char *ev
 	return 0;
 }
 
-int perf_ring_process(struct PerfEventRing *perf_event) {
-	unsigned char* data;
-	struct perf_event_header *header;
+int perf_ring_process(struct PerfEventRing *ring) {
 	struct perf_event_mmap_page *meta;
-	meta = perf_event->meta;
+	struct perf_event_header *header;
+	unsigned char *data;
+	unsigned long off;
 
+	meta = ring->meta;
 	while (meta->data_tail != meta->data_head) {
-		data = perf_event->data + perf_event->index;
-		header = (struct perf_event_header*)data;
+		off = (unsigned long)(meta->data_tail & (ring->data_size - 1));
+		data = ring->data + off;
+		header = (void*)data;
 
-		if (perf_event->index + sizeof(struct perf_event_header) < perf_event->data_size &&
-				(perf_event->index + header->size) <= perf_event->data_size) {
-			// FIXME: Droping overlapping event, causing tiny accuracy drop
-			switch (header->type) {
-				case PERF_RECORD_SAMPLE:
-					if (perf_event->sample_handler) {
-						perf_event->sample_handler(data);
-					} else {
-						perf_debug_handler(perf_event, data);
-					}
-					break;
-				case PERF_RECORD_LOST:
-					perf_handle_lost_event(data, perf_event->cpu, perf_event->event->name);
-					break;
-					// case PERF_RECORD_MMAP:
-					// case PERF_RECORD_FORK:
-					// case PERF_RECORD_COMM:
-					// case PERF_RECORD_EXIT:
-					// case PERF_RECORD_THROTTLE:
-					// case PERF_RECORD_UNTHROTTLE:
-				default:
-					log_warn("Unexpected event type %x!\n", header->type);
-					break;
+		if (off + sizeof(struct perf_event_header) >= ring->data_size) {
+			off = ring->data_size - off;
+			memcpy(trampo_page, data, off);
+
+			data = trampo_page + off;
+			off = sizeof(struct perf_event_header) - off;
+			memcpy(data, ring->data, off);
+
+			header = (void*)trampo_page;
+			if (header->size <= page_size) {
+				memcpy(trampo_page + sizeof(struct perf_event_header),
+				       ring->data + off,
+				       header->size - sizeof(struct perf_event_header));
+			} else {
+				log_error("Event is too large\n");
+				goto next;
 			}
+		} else if (off + header->size > ring->data_size) {
+			if (header->size <= page_size) {
+				off = ring->data_size - off;
+				memcpy(trampo_page, data, off);
+				memcpy(trampo_page + off, ring->data, (header->size - off));
+			} else {
+				log_error("Event is too large\n");
+				goto next;
+			}
+			header = (void*)trampo_page;
 		}
 
-		meta->data_tail += header->size;
-		perf_event->index += header->size;
-		while (perf_event->index >= perf_event->data_size) {
-			perf_event->index -= perf_event->data_size;
+		switch (header->type) {
+			case PERF_RECORD_SAMPLE:
+				if (ring->sample_handler) {
+					ring->sample_handler((void*)header);
+				} else {
+					perf_debug_handler(ring, (void*)header);
+				}
+				break;
+			case PERF_RECORD_LOST:
+				perf_handle_lost_event((void*)header, ring->cpu, ring->event->name);
+				break;
+				// TODO:
+				// case PERF_RECORD_MMAP:
+				// case PERF_RECORD_FORK:
+				// case PERF_RECORD_COMM:
+				// case PERF_RECORD_EXIT:
+				// case PERF_RECORD_THROTTLE:
+				// case PERF_RECORD_UNTHROTTLE:
+			default:
+				log_warn("Unexpected event type %x!\n", header->type);
+				break;
 		}
+
+next:
+		meta->data_tail += header->size;
 	}
 	return 0;
 }
