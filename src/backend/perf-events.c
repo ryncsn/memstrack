@@ -39,7 +39,7 @@
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 
 DefineEvent(
-	kmem, mm_page_alloc, 1024,
+	kmem, mm_page_alloc, 20,
 	PERF_SAMPLE_RAW | PERF_SAMPLE_CALLCHAIN,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -50,7 +50,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 1024,
+	kmem, mm_page_free, 20,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -58,26 +58,26 @@ DefineEvent(
 );
 
 DefineEvent(
-	module, module_load, 8,
+	module, module_load, 0,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
-	syscalls, sys_enter_init_module, 8,
+	syscalls, sys_enter_init_module, 0,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_init_module, 8,
+	syscalls, sys_exit_init_module, 0,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	sched, sched_process_exec, 8,
+	sched, sched_process_exec, 0,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
@@ -282,9 +282,15 @@ int perf_load_events(void)
 	return 0;
 }
 
-static int align_buffer(int buf_size) {
-	/* Align to page, and one extra page for buffer */
-	return ((buf_size / page_size) + 1) * page_size;
+static int calc_bufsize(struct PerfEvent* event) {
+	/* Align to 2^n of pages, and one extra page for buffer */
+	int page_min = ((1 << event->buf_shift_min) / page_size);
+
+	if (!page_min) {
+		page_min = 1;
+	}
+
+	return (page_min + 1) * page_size;
 }
 
 int perf_ring_setup(struct PerfEventRing *ring) {
@@ -303,7 +309,7 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.exclude_callchain_kernel = 0;
 	attr.config = ring->event->id;
 
-	buf_size = align_buffer(ring->event->buf_size);
+	buf_size = calc_bufsize(ring->event);
 
 	/* Try wake up when there are 1KB of event to process */
 	attr.wakeup_watermark = 1024;
@@ -459,7 +465,7 @@ int perf_ring_clean(struct PerfEventRing *perf_event) {
 		log_error("Failed to stop perf sampling!\n");
 	}
 
-	ret = munmap(perf_event->mmap, align_buffer(perf_event->event->buf_size));
+	ret = munmap(perf_event->mmap, calc_bufsize(perf_event->event));
 	if (ret) {
 		log_error("Failed to unmap perf ring buffer!\n");
 	} else {

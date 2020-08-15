@@ -35,7 +35,7 @@ struct PerfEvent {
 	int id;
 
 	unsigned long sample_type;
-	unsigned int buf_size;
+	unsigned int buf_shift_min;
 	short fileds_num;
 
 	struct PerfEventField fields[];

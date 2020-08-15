@@ -54,13 +54,13 @@
 #define _DoDefineTable(name, ...)\
 	struct PerfEventField name##_info;
 
-#define DefineEvent(event_class, name, buf_size, sample_type, ...)\
+#define DefineEvent(event_class, name, buf_shift_min, sample_type, ...)\
 	struct PerfEvent perf_event_##name = {\
 		#event_class,\
 		#name,\
 		0,\
 		sample_type,\
-		(buf_size * 1024),\
+		buf_shift_min,\
 		NUMFIELDS( __VA_ARGS__ ),\
 		{\
 			FORAPPLY(_DoDefineField, __VA_ARGS__)\
