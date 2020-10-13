@@ -25,10 +25,6 @@ clean:
 	rm -f memstrack
 
 install: all
-	mkdir -p $(DESTDIR)$(bindir)
-	mkdir -p $(DESTDIR)$(sysconfdir)
-	mkdir -p $(DESTDIR)$(pkglibdir)/modules.d
-	mkdir -p $(DESTDIR)$(mandir)/man1 $(DESTDIR)$(mandir)/man5 $(DESTDIR)$(mandir)/man7 $(DESTDIR)$(mandir)/man8
 	install -m 0755 memstrack $(DESTDIR)$(bindir)/memstrack
 
 uninstall:
