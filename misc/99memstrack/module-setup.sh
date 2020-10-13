@@ -17,7 +17,7 @@ depends() {
 }
 
 install() {
-    inst "/bin/memstrack" "/bin/memstrack"
+    inst $(command -v memstrack) "/bin/memstrack"
 
     inst "$moddir/memstrack-start.sh" "/bin/memstrack-start"
     inst_hook cleanup 99 "$moddir/memstrack-report.sh"
