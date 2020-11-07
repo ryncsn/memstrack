@@ -20,15 +20,14 @@
 #define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "memstrack.h"
 #include "tracing.h"
 #include "report.h"
 #include "proc.h"
 
-int m_throttle = 100;
-
-static void report_module_summary(void) {
+static void report_module_summary(struct reporter_fmt* fmt) {
 	struct Module **modules;
 	modules = collect_modules_sorted(0);
 
@@ -46,26 +45,35 @@ static void report_module_summary(void) {
 	free(modules);
 }
 
-static void report_module_top(void) {
+static void report_module_top(struct reporter_fmt* fmt) {
 	struct Module **modules;
 	modules = collect_modules_sorted(0);
 
 	for (int i = 0; i < module_map.size; ++i) {
 		log_info("Top stack usage of module %s:\n", modules[i]->name);
-		print_tracenode(&modules[i]->tracenode, 2, 1, 0);
+		print_tracenode(&modules[i]->tracenode, 2, 2, 0);
 	}
 
 	free(modules);
 }
 
-static void report_task_summary (void) {
+static long overall_page_limit(int throttle) {
+	long nr_pages_limit;
+
+	nr_pages_limit = page_alloc_counter - page_free_counter;
+
+	if (throttle > 0)
+		nr_pages_limit = (nr_pages_limit * throttle + 99) / 100;
+
+	return nr_pages_limit;
+}
+
+static void report_task_summary (struct reporter_fmt* fmt) {
 	int task_num;
 	long nr_pages_limit;
 	struct Task **tasks;
 
-	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
-
+	nr_pages_limit = overall_page_limit(fmt->throttle);
 	tasks = collect_tasks_sorted(0, &task_num);
 	for (int i = 0; i < task_num && nr_pages_limit > 0; ++i) {
 		log_info(
@@ -79,30 +87,28 @@ static void report_task_summary (void) {
 	free(tasks);
 };
 
-static void report_task_top (void) {
+static void report_task_top (struct reporter_fmt* fmt) {
 	int task_num;
 	long nr_pages_limit;
 	struct Task **tasks;
 
-	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
+	nr_pages_limit = overall_page_limit(fmt->throttle);
 	tasks = collect_tasks_sorted(0, &task_num);
 
 	for (int i = 0; i < task_num && nr_pages_limit > 0; i++) {
-		print_task(tasks[i]);
+		print_task(tasks[i], fmt->top, fmt->throttle);
 		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
 	}
 
 	free(tasks);
 };
 
-static void report_task_top_json(void) {
+static void report_task_top_json(struct reporter_fmt* fmt) {
 	int task_num;
 	long nr_pages_limit;
 	struct Task **tasks;
 
 	nr_pages_limit = page_alloc_counter - page_free_counter;
-	nr_pages_limit = (nr_pages_limit * m_throttle + 99) / 100;
 	tasks = collect_tasks_sorted(0, &task_num);
 
 	log_info("[\n");
@@ -119,11 +125,11 @@ static void report_task_top_json(void) {
 	free(tasks);
 };
 
-static void report_proc_slab_static(void) {
+static void report_proc_slab_static(struct reporter_fmt* fmt) {
 	print_slab_usage();
 }
 
-struct reporter_table_t  reporter_table[] = {
+struct reporter_table_t reporter_table[] = {
 	{"module_summary", report_module_summary},
 	{"module_top", report_module_top},
 	{"task_summary", report_task_summary},
@@ -134,20 +140,101 @@ struct reporter_table_t  reporter_table[] = {
 
 int report_table_size = sizeof(reporter_table) / sizeof(struct reporter_table_t);
 
-void final_report(char *type, int task_limit) {
-	load_kallsyms();
+/* This func will write to fmt_tok */
+static int parse_report_fmt_tok(char *fmt_tok,
+		struct reporter_table_t **reporter, struct reporter_fmt *fmt) {
+	char *report_type, *report_arg, *tmp;
 
-	char *report_type;
-	report_type = strtok(type, ",");
+	struct reporter_fmt parsed_fmt = { 0 };
+	struct reporter_table_t *parsed_reporter = NULL;
 
-	do {
-		for (int i = 0; i < report_table_size; ++i) {
-			if (!strcmp(reporter_table[i].name, report_type)) {
-				log_info("\n======== Report format %s: ========\n", report_type);
-				reporter_table[i].report();
-				log_info("======== Report format %s END ========\n", report_type);
-			}
+	report_type = fmt_tok;
+	strtok_r(report_type, ":", &tmp);
+	report_arg = strtok_r(NULL, ":", &tmp);
+
+	for (int i = 0;; ++i) {
+		if (!strcmp(reporter_table[i].name, report_type)) {
+			parsed_reporter = &reporter_table[i];
+			break;
 		}
-		report_type = strtok(NULL, ",");
-	} while (report_type);
+	}
+
+	if (!parsed_reporter) {
+		log_error("Invalid report type: %s\n", report_type);
+		return -1;
+	}
+
+	while (report_arg) {
+		if (strcmp(report_arg, "sort_by_alloc") == 0) {
+			parsed_fmt.sort_by = SORT_BY_ALLOC;
+		} else if (strcmp(report_arg, "sort_by_peak") == 0) {
+			parsed_fmt.sort_by = SORT_BY_PEAK;
+		} else if (strncmp(report_arg, "throttle=", sizeof("throttle")) == 0) {
+			char *end_p;
+			parsed_fmt.throttle = strtol(report_arg + sizeof("throttle"), &end_p, 10);
+			if (*end_p != '\0')
+				goto err_arg;
+		} else if (strncmp(report_arg, "top=", sizeof("top")) == 0) {
+			char *end_p;
+			parsed_fmt.top = strtol(report_arg + sizeof("top"), &end_p, 10);
+			if (*end_p != '\0')
+				goto err_arg;
+		} else {
+			goto err_arg;
+		}
+		report_arg = strtok_r(NULL, ":", &tmp);
+	}
+
+	if (fmt)
+		memcpy(fmt, &parsed_fmt, sizeof(parsed_fmt));
+	if (reporter)
+		*reporter = parsed_reporter;
+
+	return 0;
+
+err_arg:
+	log_error("Invalid report arg: %s\n", report_arg);
+	return -1;
+}
+
+void do_report(const char *fmt_str) {
+	char *report_fmt, *report_tok, *tmp;
+	struct reporter_fmt parsed_fmt;
+	struct reporter_table_t *parsed_reporter;
+
+	report_fmt = strdup(fmt_str);
+	report_tok = strtok_r(report_fmt, ",", &tmp);
+
+	load_kallsyms();
+	while (report_tok) {
+		parse_report_fmt_tok(report_tok, &parsed_reporter, &parsed_fmt);
+
+		log_info("\n======== Report format %s: ========\n", parsed_reporter->name);
+		parsed_reporter->report(&parsed_fmt);
+		log_info("======== Report format %s END ========\n", parsed_reporter->name);
+
+		report_tok = strtok_r(NULL, ",", &tmp);
+	}
+	free(report_fmt);
+}
+
+/* {<type>[[:params]...],...} */
+int check_report_fmt(const char *fmt_str) {
+	int ret = 0;
+	char *report_fmt, *report_tok, *tmp;
+
+	report_fmt = strdup(fmt_str);
+	report_tok = strtok_r(report_fmt, ",", &tmp);
+
+	while (report_tok) {
+		ret = parse_report_fmt_tok(report_tok, NULL, NULL);
+		if (ret < 0)
+			goto out;
+
+		report_tok = strtok_r(NULL, ",", &tmp);
+	};
+
+out:
+	free(report_fmt);
+	return ret;
 }

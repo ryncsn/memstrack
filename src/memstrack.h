@@ -21,7 +21,6 @@
 extern int m_debug;
 extern int m_perf;
 extern int m_ftrace;
-extern int m_throttle;
 extern int m_sort_alloc;
 extern int m_sort_peak;
 extern int m_notui;
@@ -29,7 +28,7 @@ extern int m_notui;
 extern int m_slab;
 extern int m_page;
 
-extern char* m_report;
+extern const char* m_report;
 extern unsigned int page_size;
 
 extern FILE* m_output;

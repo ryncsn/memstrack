@@ -19,12 +19,24 @@
 
 #include "utils.h"
 
+enum reporter_sort_by {
+	SORT_BY_ALLOC = 0, /* default */
+	SORT_BY_PEAK
+};
+
+struct reporter_fmt {
+	enum reporter_sort_by sort_by;
+	int throttle;
+	int top;
+};
+
 struct reporter_table_t {
 	char *name;
-	void (*report)(void);
+	void (*report)(struct reporter_fmt* fmt);
 };
 
 extern struct reporter_table_t reporter_table[];
 extern int report_table_size;
 
-void final_report(char* type, int task_limit);
+int check_report_fmt(const char *fmt);
+void do_report(const char* fmt);

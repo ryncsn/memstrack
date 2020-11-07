@@ -917,7 +917,7 @@ void print_task_json(struct Task* task) {
 	log_info(" }");
 }
 
-void print_tracenode(struct Tracenode* tracenode, int current_indent, int substack_limit, int throttle) {
+void print_tracenode(struct Tracenode* tracenode, int current_indent, int top_nr, int throttle) {
 	int next_indent = current_indent + 2, counter, padding = current_indent;
 	long page_limit;
 
@@ -938,50 +938,35 @@ void print_tracenode(struct Tracenode* tracenode, int current_indent, int substa
 	if (tracenode->children) {
 		struct Tracenode **nodes;
 		nodes = collect_tracenodes_sorted(tracenode->children, &counter, 1);
-		for (int i = 0; i < counter &&
-				(substack_limit <= 0 || i < substack_limit); i++) {
-			print_tracenode(nodes[i], next_indent, substack_limit, throttle);
+		if (top_nr > 0)
+			counter = top_nr > counter ? counter : top_nr;
+		for (int i = 0; i < counter && page_limit > 0; i++) {
+			print_tracenode(nodes[i], next_indent, top_nr, throttle);
 			page_limit -= nodes[i]->record->pages_alloc;
 		}
 		free(nodes);
 	}
 }
 
-void print_task(struct Task* task) {
-	int indent, counter;
+void print_task(struct Task* task, int top_nr, int throttle) {
+	int counter;
 	struct Tracenode *tn = &task->tracenode;
 	struct Tracenode **nodes;
 
-	indent = 2;
 	log_info("%s Pages: %ld (peak: %ld)\n",
 			task->task_name,
 			tn->record->pages_alloc,
 			tn->record->pages_alloc_peak);
 	if (to_tracenode(task)->children) {
 		nodes = collect_tracenodes_sorted(to_tracenode(task)->children, &counter, 1);
+		if (top_nr > 0)
+			counter = top_nr > counter ? counter : top_nr;
 		for (int i = 0; i < counter; i++) {
-			print_tracenode(nodes[i], indent, -1, m_throttle);
+			print_tracenode(nodes[i], 2, top_nr, throttle);
 		}
 
 		free(nodes);
 	}
-}
-
-void print_tasks(struct Task *tasks[], int nr_tasks, long nr_pages_limit, short json, short peak)
-{
-	if (json)
-		log_info("[\n");
-	for (int i = 0; i < nr_tasks && nr_pages_limit > 0; i++) {
-		if (json) {
-			print_task_json(tasks[i]);
-		} else {
-			print_task(tasks[i]);
-		}
-
-		nr_pages_limit -= tasks[i]->tracenode.record->pages_alloc;
-	}
-	if (json)
-		log_info("]\n");
 }
 
 /*

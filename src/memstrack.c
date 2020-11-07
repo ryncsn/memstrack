@@ -43,7 +43,7 @@ enum { BACKEND_PERF, BACKEND_FTRACE, BACKEND_PAGEOWNER } m_backend;
 int m_debug;
 int m_notui;
 
-char* m_report;
+const char* m_report;
 char* m_output_path;
 FILE* m_output;
 
@@ -85,8 +85,9 @@ static void do_exit() {
 	}
 
 	if (m_report) {
-		final_report(m_report, 0);
+		do_report(m_report);
 	}
+
 	if (m_output != stdout) {
 		fclose(m_output);
 	}
@@ -196,11 +197,13 @@ static void display_usage() {
 	log_info("    			Choose a backend for memory allocation tracing. Defaults to perf.\n");
 	log_info("    			ftrace: poor performance but should always work.\n");
 	log_info("    			perf: binary perf, may require CONFIG_FRAME_POINTER enabled for Kernel version <= 5.1.\n");
-	log_info("    --throttle [PERCENTAGE]\n");
-	log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed.\n");
-	log_info("    			expects a number between 0 to 100. Useful to filter minor allocations.\n");
-	log_info("    --report {<type>,...}\n");
+	log_info("    --report {<type>[[:params]...],...}\n");
 	log_info("    			Choose final report type, if multiple types are given, they are printed in given order.\n");
+	log_info("    			Params could be:\n");
+	log_info("    				sort_by_alloc: Sort by memory usage\n");
+	log_info("    				sort_by_peak:  Sort by peak memory usage\n");
+	log_info("    				throttle=<PERCENT>: Only print top callsites that consumes <PERCENT> of memories\n");
+	log_info("    				top=<NUM>: Only print top N callsites\n");
 	log_info("    			Available report types: [ ");
 	for (int i = 0; i < report_table_size; ++i) {
 		log_info("\"%s\" ", reporter_table[i].name);
@@ -235,7 +238,6 @@ int main(int argc, char **argv) {
 		{"debug",		no_argument,		&m_debug,	1},
 		{"output",		required_argument,	0,		'o'},
 		{"backend",		required_argument,	0,		'b'},
-		{"throttle",		required_argument,	0,		't'},
 		{"report",		required_argument,	0,		'r'},
 		{"buf-size",		required_argument,	0,		's'},
 		{"pageowner-file",	required_argument,	0,		'p'},
@@ -248,7 +250,6 @@ int main(int argc, char **argv) {
 	while (1) {
 		int opt;
 		int option_index = 0;
-		char *report_type;
 
 		opt = getopt_long(argc, argv, "dho:b:t:r:s:?", long_options, &option_index);
 
@@ -262,26 +263,9 @@ int main(int argc, char **argv) {
 				// Flag setted, nothing to do
 				break;
 			case 'r':
-				m_report = strdup(optarg);
-				report_type = strtok(m_report, ",");
-				do {
-					for (int i = 0;; ++i) {
-						if (i == report_table_size) {
-							log_error("Invalid report type: %s\n", report_type);
-							m_exit(1);
-						}
-
-						if (!strcmp(reporter_table[i].name, report_type)) {
-							break;
-						}
-					}
-					report_type = strtok(NULL, ",");
-				} while (report_type);
-
-				/* Re-copy it, strtok will corrupt current one */
-				free(m_report);
-				m_report = strdup(optarg);
-
+				if (check_report_fmt(optarg) < 0)
+					m_exit(1);
+				m_report = optarg;
 				break;
 			case 's':
 				m_buf_size = atoi(optarg);
@@ -303,13 +287,6 @@ int main(int argc, char **argv) {
 				}
 				log_debug("Detailed report will be write to %s.\n", optarg);
 				m_output_path = strdup(optarg);
-				break;
-			case 't':
-				m_throttle = atoi(optarg);
-				if (m_throttle < 0 || m_throttle > 100) {
-					log_error("--throttle expects an integer between 0 - 100!\n");
-					exit(1);
-				}
 				break;
 			case 'b':
 				if (!strcmp(optarg, "perf")) {

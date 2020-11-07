@@ -127,10 +127,10 @@ struct Module **collect_modules_sorted(int shallow);
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *counter, int shallow);
 struct Module *get_or_new_module(char *name);
 
-void print_tracenode(struct Tracenode* tracenode, int indent, int substack_limit, int throttle);
-void print_tracenode_json(struct Tracenode* tracenode, void *blob);
+void print_tracenode(struct Tracenode* tracenode, int indent, int top_nr, int throttle);
+void print_tracenode_json(struct Tracenode* tracenode, void *json_marker);
 
-void print_task(struct Task* task);
+void print_task(struct Task* task, int top_nr, int throttle);
 void print_task_json(struct Task* task);
 
 int for_each_tracenode_ret(struct Tracenode* root, int (*op)(struct Tracenode *node, void *blob), void *blob);
