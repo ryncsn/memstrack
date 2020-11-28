@@ -147,29 +147,24 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 			sizeof(callchain->nr) +
 			sizeof(callchain->ips) * callchain->nr);
 
-	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
-		// TODO: Older kernel won't work yet
-		return -1;
-	} else {
-		unsigned long pfn = read_data_from_perf_raw(mm_page_alloc, pfn, unsigned long, raw);
-		unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);
-		int pid = read_data_from_perf_raw(mm_page_alloc, common_pid, int, raw);
+	unsigned long pfn = read_data_from_perf_raw(mm_page_alloc, pfn, unsigned long, raw);
+	unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);
+	int pid = read_data_from_perf_raw(mm_page_alloc, common_pid, int, raw);
 
-		// TODO: pfn == -1?
-		if (pfn == ULONG_MAX)
-			return 0;
+	// TODO: pfn == -1?
+	if (pfn == ULONG_MAX)
+		return 0;
 
-		event.pages_alloc = 1;
-		event.pfn = pfn;
+	event.pages_alloc = 1;
+	event.pfn = pfn;
 
-		for (unsigned int i = 0; i < order; ++i) {
-			event.pages_alloc *= 2;
-		}
-
-		task = get_or_new_task(pid);
-
-		__process_stacktrace(callchain, task, &event);
+	for (unsigned int i = 0; i < order; ++i) {
+		event.pages_alloc *= 2;
 	}
+
+	task = get_or_new_task(pid);
+
+	__process_stacktrace(callchain, task, &event);
 
 	return 0;
 }
@@ -279,6 +274,11 @@ int perf_load_events(void)
 		ret = perf_do_load_event_info(perf_event_table[i].event);
 		if (ret)
 			return ret;
+	}
+
+	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
+		log_error("Current running kernel is too old and not supported.\n");
+		return -1;
 	}
 
 	return 0;
