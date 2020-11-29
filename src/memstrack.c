@@ -49,6 +49,7 @@ FILE* m_output;
 int m_slab;
 int m_page = 1;
 int m_loop = 1;
+int m_buf_size = 4 << 20;
 
 char* m_perf_base;
 
@@ -106,6 +107,7 @@ static struct option long_options[] =
 	{"backend",		required_argument,	0,		'b'},
 	{"throttle",		required_argument,	0,		't'},
 	{"report",		required_argument,	0,		'r'},
+	{"buf-size",		required_argument,	0,		's'},
 	{"help",		no_argument,		0,		'?'},
 	// {"human-readable",	no_argument,		0,		NULL},
 	// {"trace-base",	required_argument,	0,		NULL},
@@ -134,6 +136,8 @@ static void display_usage() {
 	}
 
 	log_info("]\n");
+	log_info("    --buf-size <MB>\n");
+	log_info("    			Buffer size for collecting memory allocation info, this is a per-CPU buffer size, and defaults to 4M per CPU, increase this value may help to reduce event lose rate.\n");
 	log_info("    --debug		Print more debug messages.\n");
 	log_info("    --help 		Print this help message.\n");
 	// log_info("    --throttle-peak	\n");
@@ -239,7 +243,7 @@ int main(int argc, char **argv) {
 		int option_index = 0;
 		char *report_type;
 
-		opt = getopt_long(argc, argv, "dho:b:t:r:?", long_options, &option_index);
+		opt = getopt_long(argc, argv, "dho:b:t:r:s:?", long_options, &option_index);
 
 		/* Detect the end of the options. */
 		if (opt == -1)
@@ -249,6 +253,16 @@ int main(int argc, char **argv) {
 		{
 			case 0:
 				// Flag setted, nothing to do
+				break;
+			case 's':
+				m_buf_size = atoi(optarg);
+				if (m_buf_size < 0) {
+					log_error("--buf-size expects an integer  0.\n");
+					exit(1);
+				}
+
+				perf_buf_size_per_cpu = m_buf_size << 20;
+
 				break;
 			case 'p':
 				m_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);

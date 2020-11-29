@@ -25,7 +25,7 @@
 #include "../memstrack.h"
 #include "perf-internal.h"
 
-size_t perf_buf_size_per_cpu = 4 << 20;
+int perf_buf_size_per_cpu = 4 << 20;
 
 int perf_event_ring_num;
 struct PerfEventRing *perf_event_rings;

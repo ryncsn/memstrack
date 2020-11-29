@@ -21,6 +21,7 @@
 
 extern struct PerfEvent *perf_events;
 extern int perf_event_ring_num;
+extern int perf_buf_size_per_cpu;
 
 int perf_handling_init();
 int perf_handling_clean();
