@@ -35,7 +35,8 @@ struct PerfEvent {
 	int id;
 
 	unsigned long sample_type;
-	unsigned int buf_shift_min;
+	unsigned int buf_factor;
+	unsigned int buf_size;
 	short fileds_num;
 
 	struct PerfEventField fields[];
@@ -71,7 +72,7 @@ extern const struct perf_event_table_entry perf_event_table[];
 
 extern const int perf_event_entry_number;
 
-int perf_load_events(void);
+int perf_prepare_events(int buf_per_cpu);
 int perf_ring_setup(struct PerfEventRing *ring);
 int perf_ring_start_sampling(struct PerfEventRing *ring);
 int perf_ring_process(struct PerfEventRing *ring);

@@ -178,7 +178,7 @@ static void init_fds(void) {
 			exit(ret);
 		}
 
-		m_pollfd_num = extra_fd_num + perf_count_fds();
+		m_pollfd_num = extra_fd_num + perf_event_ring_num;
 	} else if (m_ftrace) {
 		ret = ftrace_handling_init();
 		if (ret) {

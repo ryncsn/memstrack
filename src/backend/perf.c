@@ -25,9 +25,11 @@
 #include "../memstrack.h"
 #include "perf-internal.h"
 
+size_t perf_buf_size_per_cpu = 4 << 20;
+
 int perf_event_ring_num;
-struct pollfd *perf_fds;
 struct PerfEventRing *perf_event_rings;
+struct pollfd *perf_fds;
 
 static void assign_cpu_no(int cpu_no, void *rings) {
 	(*(struct PerfEventRing**)rings)->cpu = cpu_no;
@@ -35,44 +37,38 @@ static void assign_cpu_no(int cpu_no, void *rings) {
 }
 
 int perf_handling_init() {
-	int err;
-	int count = 0;
+	int ret;
 	int cpu_num = perf_get_cpu_num();
 	const struct perf_event_table_entry *entry;
 
-	err = perf_load_events();
-	if (err) {
-		return err;
+	ret = perf_prepare_events(perf_buf_size_per_cpu);
+	if (ret < 0) {
+		return ret;
 	}
 
-	for (int i = 0; i < perf_event_entry_number; i++) {
-		if (perf_event_table[i].is_enabled()) {
-			perf_event_ring_num += cpu_num;
-		}
-	}
-
+	perf_event_ring_num = ret * perf_get_cpu_num();
 	perf_event_rings = (struct PerfEventRing*)calloc(perf_event_ring_num, sizeof(struct PerfEventRing));
 
 	for (int i = 0; i < perf_event_entry_number; i++){
-		struct PerfEventRing *rings = perf_event_rings + count;
+		struct PerfEventRing *rings = perf_event_rings + (i * cpu_num);
+		entry = perf_event_table + i;
 
-		entry = &perf_event_table[i];
 		if (!entry->is_enabled()) {
 			continue;
 		}
 
-		for_each_online_cpu(assign_cpu_no, &rings);
 		for (int cpu = 0; cpu < cpu_num; cpu++) {
-			perf_event_rings[count].event = entry->event;
-			perf_event_rings[count].sample_handler = entry->handler;
-			count++;
+			rings[cpu].event = entry->event;
+			rings[cpu].sample_handler = entry->handler;
 		}
+
+		for_each_online_cpu(assign_cpu_no, &rings);
 	}
 
 	for (int i = 0; i < perf_event_ring_num; i++) {
-		err = perf_ring_setup(perf_event_rings + i);
-		if (err) {
-			return err;
+		ret = perf_ring_setup(perf_event_rings + i);
+		if (ret) {
+			return ret;
 		}
 	}
 

@@ -37,9 +37,10 @@
 
 #define PERF_EVENTS_PATH "/sys/kernel/debug/tracing/events"
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
+#define WAKEUP_WATERMARK 1024
 
 DefineEvent(
-	kmem, mm_page_alloc, 20,
+	kmem, mm_page_alloc, 32,
 	PERF_SAMPLE_RAW | PERF_SAMPLE_CALLCHAIN,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -50,7 +51,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 20,
+	kmem, mm_page_free, 32,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -58,26 +59,26 @@ DefineEvent(
 );
 
 DefineEvent(
-	module, module_load, 0,
+	module, module_load, 1,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
 DefineEvent(
-	syscalls, sys_enter_init_module, 0,
+	syscalls, sys_enter_init_module, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_init_module, 0,
+	syscalls, sys_exit_init_module, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	sched, sched_process_exec, 0,
+	sched, sched_process_exec, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
@@ -266,38 +267,65 @@ const struct perf_event_table_entry perf_event_table[] = {
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);
 
-int perf_load_events(void)
+int perf_prepare_events(int buf_size)
 {
 	int ret;
+	int perf_event_enabled_num = 0;
+	int total_factor = 0;
+	size_t buf_per_factor, aligned_buf_size = 0;
 
 	for (int i = 0; i < perf_event_entry_number; ++i) {
 		ret = perf_do_load_event_info(perf_event_table[i].event);
 		if (ret)
 			return ret;
+
+		if (perf_event_table[i].is_enabled()) {
+			perf_event_enabled_num ++;
+			total_factor += perf_event_table[i].event->buf_factor;
+		}
 	}
 
+	/* Check event requirements */
 	if (get_perf_event_info(mm_page_alloc)->page_info.checked) {
 		log_error("Current running kernel is too old and not supported.\n");
 		return -1;
 	}
 
-	return 0;
-}
+	buf_size = (buf_size / total_factor / page_size) * total_factor * page_size;
+	buf_per_factor = buf_size / total_factor;
 
-static int calc_bufsize(struct PerfEvent* event) {
-	/* Align to 2^n of pages, and one extra page for buffer */
-	int page_min = ((1 << event->buf_shift_min) / page_size);
+	for (int i = 0; i < perf_event_entry_number; ++i) {
+		size_t size = page_size, max_size = perf_event_table[i].event->buf_factor * buf_per_factor;
 
-	if (!page_min) {
-		page_min = 1;
+		if (max_size < WAKEUP_WATERMARK || max_size < page_size) {
+			log_error("perf ring buffer too small!\n");
+		}
+
+		while (size < max_size)
+			size *= 2;
+
+		if (size > max_size)
+			size /= 2;
+
+		size += page_size;
+
+		perf_event_table[i].event->buf_size = size;
+		aligned_buf_size += size;
+
+		log_debug("%s using %ld (%ld pages) of buffer per CPU.\n",
+				perf_event_table[i].event->name,
+				perf_event_table[i].event->buf_size,
+				perf_event_table[i].event->buf_size / page_size);
 	}
 
-	return (page_min + 1) * page_size;
+	log_debug("Perf buffer size aligned to %ld (%lxMB) per CPU.\n", aligned_buf_size, aligned_buf_size >> 20);
+
+	return perf_event_enabled_num;
 }
 
 int perf_ring_setup(struct PerfEventRing *ring) {
 	struct perf_event_attr attr;
-	int perf_fd = 0, buf_size;
+	int perf_fd = 0;
 
 	memset(&attr, 0, sizeof(struct perf_event_attr));
 	attr.size = sizeof(struct perf_event_attr);
@@ -311,13 +339,8 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.exclude_callchain_kernel = 0;
 	attr.config = ring->event->id;
 
-	buf_size = calc_bufsize(ring->event);
-
 	/* Try wake up when there are 1KB of event to process */
-	attr.wakeup_watermark = 1024;
-	if (buf_size < (int)attr.wakeup_watermark) {
-		log_error("perf ring buffer too small!\n");
-	}
+	attr.wakeup_watermark = WAKEUP_WATERMARK;
 	attr.watermark = 1;
 
 	perf_fd = sys_perf_event_open(&attr, -1, ring->cpu, -1, 0);
@@ -330,19 +353,16 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	fcntl(perf_fd, F_SETFL, O_NONBLOCK);
 
 	// Extra one page for metadata
-	void *perf_mmap = mmap(NULL,
-			buf_size,
-			PROT_READ | PROT_WRITE, MAP_SHARED, perf_fd, 0);
+	void *perf_mmap = mmap(NULL, ring->event->buf_size, PROT_READ | PROT_WRITE, MAP_SHARED, perf_fd, 0);
 
 	if (perf_mmap == MAP_FAILED) {
-		log_error("Failed mmaping perf ring buffer: %s, %d\n", strerror(errno), buf_size);
+		log_error("Failed mmaping perf ring buffer: %s, %d\n", strerror(errno), ring->event->buf_size);
 		return errno;
 	}
 
 	ring->fd = perf_fd;
 	ring->mmap = perf_mmap;
-	ring->mmap_size = buf_size;
-	ring->data_size = buf_size - page_size;
+	ring->data_size = ring->event->buf_size - page_size;
 	ring->meta = (struct perf_event_mmap_page *)perf_mmap;
 	ring->data = (unsigned char *)perf_mmap + page_size;
 	ring->index = 0;
@@ -494,7 +514,7 @@ int perf_ring_clean(struct PerfEventRing *perf_event) {
 		log_error("Failed to stop perf sampling!\n");
 	}
 
-	ret = munmap(perf_event->mmap, calc_bufsize(perf_event->event));
+	ret = munmap(perf_event->mmap, perf_event->event->buf_size);
 	if (ret) {
 		log_error("Failed to unmap perf ring buffer!\n");
 	} else {

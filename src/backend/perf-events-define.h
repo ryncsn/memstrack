@@ -61,6 +61,7 @@
 		0,\
 		sample_type,\
 		buf_shift_min,\
+		0,\
 		NUMFIELDS( __VA_ARGS__ ),\
 		{\
 			FORAPPLY(_DoDefineField, __VA_ARGS__)\
@@ -71,8 +72,6 @@
 	}
 
 #define EventField(type, name, ...) (name, type, ##__VA_ARGS__)
-
-#define PerfEvent(name) &perf_event_##name
 
 #define IncludeCommonEventFields()\
 	EventField(unsigned short, common_type),\
