@@ -31,15 +31,16 @@
 
 #include "backend/perf.h"
 #include "backend/ftrace.h"
+#include "backend/page_owner.h"
 #include "memstrack.h"
 #include "tracing.h"
 #include "report.h"
 #include "proc.h"
 #include "tui.h"
 
+enum { BACKEND_PERF, BACKEND_FTRACE, BACKEND_PAGEOWNER } m_backend;
+
 int m_debug;
-int m_perf = 1;
-int m_ftrace = 0;
 int m_notui;
 
 char* m_report;
@@ -74,12 +75,17 @@ int m_log(int level, const char *__restrict fmt, ...){
 }
 
 static void do_exit() {
-	if (m_ftrace) {
-		ftrace_handling_clean();
+	switch (m_backend) {
+		case BACKEND_PERF:
+			perf_handling_clean();
+			break;
+		case BACKEND_FTRACE:
+			ftrace_handling_clean();
+			break;
+		default:
+			break;
 	}
-	if (m_perf) {
-		perf_handling_clean();
-	}
+
 	if (m_report) {
 		final_report(m_report, 0);
 	}
@@ -164,33 +170,37 @@ static void set_high_priority() {
 	}
 }
 
-static void init_fds(void) {
-	int extra_fd_num;
+static void init(void) {
+	int ui_fd_num;
 	int ret;
 
 	if (m_notui) {
 		log_warn("Tracing memory allocations, Press ^C to interrupt ...\n");
-		extra_fd_num = 0;
+		ui_fd_num = 0;
 	} else {
-		extra_fd_num = 2;
+		ui_fd_num = 2;
 	}
 
-	if (m_perf) {
+	if (m_backend == BACKEND_PERF) {
 		ret = perf_handling_init();
 		if (ret) {
 			log_error("Failed initializing perf events\n");
 			exit(ret);
 		}
 
-		m_pollfd_num = extra_fd_num + perf_event_ring_num;
-	} else if (m_ftrace) {
+		m_pollfd_num = ui_fd_num + perf_event_ring_num;
+	} else if (m_backend == BACKEND_FTRACE) {
 		ret = ftrace_handling_init();
 		if (ret) {
 			log_error("Failed to open ftrace: %s!", strerror(ret));
 			exit(ret);
 		}
 
-		m_pollfd_num = extra_fd_num + ftrace_count_fds();
+		m_pollfd_num = ui_fd_num + ftrace_count_fds();
+	} else if (m_backend == BACKEND_PAGEOWNER) {
+		m_pollfd_num = ui_fd_num;
+		page_owner_handling_init();
+		log_error("BUG: No backend found\n");
 	} else {
 		log_error("BUG: No backend found\n");
 		exit(1);
@@ -201,10 +211,10 @@ static void init_fds(void) {
 		log_error("Out of memory when try alloc fds\n");
 	}
 
-	if (m_perf) {
-		perf_apply_fds(m_pollfds + extra_fd_num);
-	} else if (m_ftrace) {
-		ftrace_apply_fds(m_pollfds + extra_fd_num);
+	if (m_backend == BACKEND_PERF) {
+		perf_apply_fds(m_pollfds + ui_fd_num);
+	} else if (m_backend == BACKEND_FTRACE) {
+		ftrace_apply_fds(m_pollfds + ui_fd_num);
 	}
 
 	if (!m_notui)
@@ -216,9 +226,9 @@ static void loop(void) {
 		// Resizing the terminal causes poll() to return -1
 		case -1:
 		default:
-			if (m_perf) {
+			if (m_backend == BACKEND_PERF) {
 				perf_handling_process();
-			} else if (m_ftrace) {
+			} else if (m_backend == BACKEND_FTRACE) {
 				ftrace_handling_process();
 			}
 
@@ -307,11 +317,11 @@ int main(int argc, char **argv) {
 				break;
 			case 'b':
 				if (!strcmp(optarg, "perf")) {
-					m_perf = 1;
-					m_ftrace = 0;
+					m_backend = BACKEND_PERF;
 				} else if (!strcmp(optarg, "ftrace")) {
-					m_perf = 0;
-					m_ftrace = 1;
+					m_backend = BACKEND_FTRACE;
+				} else if (!strcmp(optarg, "pageowner")) {
+					m_backend = BACKEND_PAGEOWNER;
 				} else {
 					log_error("Unknown tracing backend '%s'.\n", optarg);
 					exit(1);
@@ -342,12 +352,12 @@ int main(int argc, char **argv) {
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
 
-	init_fds();
+	init();
 
 	if (!m_notui)
 		tui_init();
 
-	if (m_perf)
+	if (m_backend == BACKEND_PERF)
 		perf_handling_start();
 
 	while (m_loop) {
