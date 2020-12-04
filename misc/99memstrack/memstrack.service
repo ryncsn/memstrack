@@ -1,5 +1,5 @@
 [Unit]
-Description=Memstrack Anylazing Service
+Description=Memstrack Analysing Service
 DefaultDependencies=no
 Before=dracut-cmdline.service systemd-udevd.service local-fs-pre.target
 IgnoreOnIsolate=true
