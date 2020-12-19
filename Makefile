@@ -25,6 +25,7 @@ clean:
 	rm -f memstrack
 
 install: all
+	mkdir -p $(DESTDIR)$(bindir)
 	install -m 0755 memstrack $(DESTDIR)$(bindir)/memstrack
 
 uninstall:
