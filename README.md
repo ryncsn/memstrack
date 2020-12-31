@@ -58,11 +58,30 @@ Top stack usage of module virtio_console:
 # Quick start
 
 ## Installation
+
+### Fedora/CentOS
 In Latest Fedora/CentOS, this package is available by default, install it with dnf.
 ```sh
 dnf install memstrack
 ```
 
+### Arch Linux
+In Arch Linux, [memstrack](https://aur.archlinux.org/packages/memstrack/) and [memstrack-git](https://aur.archlinux.org/packages/memstrack-git/) packages are both available in the [AUR](https://aur.archlinux.org/)
+
+To install, you can either use an [AUR helper](https://wiki.archlinux.org/index.php/AUR_helpers) or follow the manual procedure as follows:
+
+Clone the package:
+```
+$ git clone https://aur.archlinux.org/packages/memstrack/
+```
+Finally build and install the application:
+```
+$ cd memstrack
+$ makepkg -si
+```
+Done! (Thanks to barmadrid for packaging on Arch Linux)
+
+### Install from source
 Or, you can also install from source, just clone the repo and build it.
 ```sh
 # First Make sure you have gcc git make ncurses-devel installed
@@ -72,6 +91,7 @@ git clone https://github.com/ryncsn/memstrack.git
 # Build it
 cd memstrack
 make
+make install
 ```
 
 ## Basic usage:
