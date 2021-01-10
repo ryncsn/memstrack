@@ -52,8 +52,6 @@ int m_page = 1;
 int m_loop = 1;
 int m_buf_size = 4 << 20;
 
-char* m_perf_base;
-
 struct pollfd *m_pollfds;
 int m_pollfd_num;
 
@@ -102,53 +100,6 @@ void m_exit(int ret) {
 static void on_signal(int signal) {
 	log_debug("Exiting on signal %d\n", signal);
 	m_exit(0);
-}
-
-static struct option long_options[] =
-{
-	/* These options set a flag. */
-	{"notui",		no_argument,		&m_notui,	1},
-	{"debug",		no_argument,		&m_debug,	1},
-	{"output",		required_argument,	0,		'o'},
-	{"backend",		required_argument,	0,		'b'},
-	{"throttle",		required_argument,	0,		't'},
-	{"report",		required_argument,	0,		'r'},
-	{"buf-size",		required_argument,	0,		's'},
-	{"help",		no_argument,		0,		'?'},
-	// {"human-readable",	no_argument,		0,		NULL},
-	// {"trace-base",	required_argument,	0,		NULL},
-	{0, 0, 0, 0}
-};
-
-
-static void display_usage() {
-	log_info("Usage: memstrack [OPTION]... \n");
-	log_info("    --notui		Only generate report.\n");
-	log_info("    --output <file>\n");
-	log_info("    			Generate trace report to given file instead of stdout.\n");
-	log_info("    --backend {perf|ftrace}\n");
-	log_info("    			Choose a backend for memory allocation tracing. Defaults to perf.\n");
-	log_info("    			ftrace: poor performance but should always work.\n");
-	log_info("    			perf: binary perf, may require CONFIG_FRAME_POINTER enabled for Kernel version <= 5.1.\n");
-	log_info("    --throttle [PERCENTAGE]\n");
-	log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed.\n");
-	log_info("    			expects a number between 0 to 100. Useful to filter minor allocations.\n");
-	log_info("    --report {<type>,...}\n");
-	log_info("    			Choose final report type, if multiple types are given, they are printed in given order.\n");
-	log_info("    			Available report types: [ ");
-
-	for (int i = 0; i < report_table_size; ++i) {
-		log_info("\"%s\" ", reporter_table[i].name);
-	}
-
-	log_info("]\n");
-	log_info("    --buf-size <MB>\n");
-	log_info("    			Buffer size for collecting memory allocation info, this is a per-CPU buffer size, and defaults to 4M per CPU, increase this value may help to reduce event lose rate.\n");
-	log_info("    --debug		Print more debug messages.\n");
-	log_info("    --help 		Print this help message.\n");
-	// log_info("    --throttle-peak	\n");
-	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M\n");
-	// log_info("    --trace-base [DIR]	Use a different tracing mount path for ftrace.\n");
 }
 
 static void tune_glibc() {
@@ -200,7 +151,6 @@ static void init(void) {
 	} else if (m_backend == BACKEND_PAGEOWNER) {
 		m_pollfd_num = ui_fd_num;
 		page_owner_handling_init();
-		log_error("BUG: No backend found\n");
 	} else {
 		log_error("BUG: No backend found\n");
 		exit(1);
@@ -237,6 +187,37 @@ static void loop(void) {
 	}
 }
 
+static void display_usage() {
+	log_info("Usage: memstrack [OPTION]... \n");
+	log_info("    --notui		Only generate report.\n");
+	log_info("    --output <file>\n");
+	log_info("    			Generate trace report to given file instead of stdout.\n");
+	log_info("    --backend {perf|ftrace|pageowner}\n");
+	log_info("    			Choose a backend for memory allocation tracing. Defaults to perf.\n");
+	log_info("    			ftrace: poor performance but should always work.\n");
+	log_info("    			perf: binary perf, may require CONFIG_FRAME_POINTER enabled for Kernel version <= 5.1.\n");
+	log_info("    --throttle [PERCENTAGE]\n");
+	log_info("    			Only print callsites consuming [PERCENTAGE] percent of total memory consumed.\n");
+	log_info("    			expects a number between 0 to 100. Useful to filter minor allocations.\n");
+	log_info("    --report {<type>,...}\n");
+	log_info("    			Choose final report type, if multiple types are given, they are printed in given order.\n");
+	log_info("    			Available report types: [ ");
+	for (int i = 0; i < report_table_size; ++i) {
+		log_info("\"%s\" ", reporter_table[i].name);
+	}
+	log_info("]\n");
+	log_info("    --pageowner-file <file>\n");
+	log_info("    			Only use with '--backend pageowner', will read from specified page owner log file instead of /sys/kernel/debug/page_owner.\n");
+	log_info("    --buf-size <MB>\n");
+	log_info("    			Buffer size for collecting memory allocation info, this is a per-CPU buffer size, and defaults to 4M per CPU, increase this value may help to reduce event lose rate.\n");
+	log_info("    --debug		Print more debug messages.\n");
+	log_info("    --help 		Print this help message.\n");
+	// log_info("    --throttle-peak	\n");
+	// log_info("    --human-readable	Print sizes in a human reable way, eg bytes_alloc: 1048576 => 1M\n");
+	// log_info("    --trace-base [DIR]	Use a different tracing mount path for ftrace.\n");
+}
+
+
 int main(int argc, char **argv) {
 	tune_glibc();
 	m_output = stdout;
@@ -247,6 +228,22 @@ int main(int argc, char **argv) {
 	}
 
 	set_high_priority();
+
+	struct option long_options[] = {
+		/* These options set a flag. */
+		{"notui",		no_argument,		&m_notui,	1},
+		{"debug",		no_argument,		&m_debug,	1},
+		{"output",		required_argument,	0,		'o'},
+		{"backend",		required_argument,	0,		'b'},
+		{"throttle",		required_argument,	0,		't'},
+		{"report",		required_argument,	0,		'r'},
+		{"buf-size",		required_argument,	0,		's'},
+		{"pageowner-file",	required_argument,	0,		'p'},
+		{"help",		no_argument,		0,		'?'},
+		// {"human-readable",	no_argument,		0,		'h'},
+		// {"trace-base",	required_argument,	0,		't'},
+		{0, 0, 0, 0}
+	};
 
 	while (1) {
 		int opt;
@@ -263,20 +260,6 @@ int main(int argc, char **argv) {
 		{
 			case 0:
 				// Flag setted, nothing to do
-				break;
-			case 's':
-				m_buf_size = atoi(optarg);
-				if (m_buf_size < 0) {
-					log_error("--buf-size expects an integer  0.\n");
-					exit(1);
-				}
-
-				perf_buf_size_per_cpu = m_buf_size << 20;
-
-				break;
-			case 'p':
-				m_perf_base = (char*)calloc(sizeof(char), strlen(optarg) + 1);
-				strcpy(m_perf_base, optarg);
 				break;
 			case 'r':
 				m_report = strdup(optarg);
@@ -299,6 +282,19 @@ int main(int argc, char **argv) {
 				free(m_report);
 				m_report = strdup(optarg);
 
+				break;
+			case 's':
+				m_buf_size = atoi(optarg);
+				if (m_buf_size < 0) {
+					log_error("--buf-size expects an integer  0.\n");
+					exit(1);
+				}
+
+				perf_buf_size_per_cpu = m_buf_size << 20;
+
+				break;
+			case 'p':
+				page_owner_set_filepath(strdup(optarg));
 				break;
 			case 'o':
 				if (m_output_path) {

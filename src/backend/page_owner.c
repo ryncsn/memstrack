@@ -31,6 +31,8 @@
 #define PAGE_ALLOC_HEADER "Page allocated via order "
 #define MAX_LINE 1024
 
+static char *page_owner_file;
+
 static struct Tracenode* __process_stacktrace(
 		struct Tracenode *tn, struct PageEvent *pe, char *line, FILE *file)
 {
@@ -39,13 +41,13 @@ static struct Tracenode* __process_stacktrace(
 	int callsite_len;
 
 	if (!fgets(line, MAX_LINE, file)) {
-		log_error("Page owner file ended unexpectly before stacktrace.");
+		log_error("Page owner file ended unexpectly before stacktrace.\n");
 		return NULL;
 	}
 
-	if (strlen(line) == 1) {
+	/* \n, or \n\r just in case */
+	if (strlen(line) <= 2)
 		return tn;
-	}
 
 	// Skip the leading space by + 1
 	callsite = strdup(line + 1);
@@ -98,7 +100,7 @@ static int page_owner_process_all(FILE *file) {
 	char line[MAX_LINE];
 
 	task = get_or_new_task_with_name(0, "<early-init>");
-
+	log_debug("Processing page owner log file... ");
 	while (fgets(line, MAX_LINE, file)) {
 		ret = page_owner_handle_header(&pe, line, file);
 		if (ret)
@@ -106,19 +108,28 @@ static int page_owner_process_all(FILE *file) {
 
 		__process_stacktrace(to_tracenode(task), &pe, line, file);
 	}
+	log_debug("Done.\n");
 
 	return 0;
 }
 
 int page_owner_handling_init() {
-	FILE *file = fopen(PAGE_OWNER_FILE, "r");
+	char *fpath;
+	FILE *file;
 
-	store_symbol_instead();
+	fpath = page_owner_file ? page_owner_file : PAGE_OWNER_FILE;
+	log_debug("Using %s as page owner log file\n", fpath);
 
+	file = fopen(fpath, "r");
 	if (!file) {
-		log_error("Failed to open %s\n", PAGE_OWNER_FILE);
+		log_error("Failed to open %s\n", fpath);
 		return -1;
 	}
 
+	store_symbol_instead();
 	return page_owner_process_all(file);
+}
+
+void page_owner_set_filepath(char *path) {
+	page_owner_file = path;
 }

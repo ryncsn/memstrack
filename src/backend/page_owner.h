@@ -20,3 +20,4 @@
 #define _GNU_SOURCE
 
 int page_owner_handling_init();
+void page_owner_set_filepath(char *path);
