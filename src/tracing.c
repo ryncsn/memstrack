@@ -579,7 +579,11 @@ static int comp_symbol(const void *x, const void *y) {
 	struct Symbol *sa = (struct Symbol*)x;
 	struct Symbol *sb = (struct Symbol*)y;
 
-	return (sa->addr - sb->addr);
+	if (sa->addr > sb->addr)
+		return 1;
+	else if (sa->addr < sb->addr)
+		return -1;
+	else return 0;
 }
 
 void load_kallsyms() {
