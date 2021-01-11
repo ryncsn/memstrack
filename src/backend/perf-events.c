@@ -291,8 +291,11 @@ int perf_prepare_events(int buf_size)
 		return -1;
 	}
 
-	buf_size = (buf_size / total_factor / page_size) * total_factor * page_size;
-	buf_per_factor = buf_size / total_factor;
+	buf_size = buf_size / total_factor / page_size;
+	if (buf_size == 0)
+		buf_size = 1;
+	buf_per_factor = buf_size * page_size;
+	log_debug("Using buffer size %ldKB\n", buf_per_factor * total_factor / 1024);
 
 	for (int i = 0; i < perf_event_entry_number; ++i) {
 		size_t size = page_size, max_size = perf_event_table[i].event->buf_factor * buf_per_factor;
