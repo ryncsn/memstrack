@@ -116,6 +116,7 @@ static int page_owner_process_all(FILE *file) {
 int page_owner_handling_init() {
 	char *fpath;
 	FILE *file;
+	int ret;
 
 	fpath = page_owner_file ? page_owner_file : PAGE_OWNER_FILE;
 	log_debug("Using %s as page owner log file\n", fpath);
@@ -127,7 +128,10 @@ int page_owner_handling_init() {
 	}
 
 	store_symbol_instead();
-	return page_owner_process_all(file);
+	ret = page_owner_process_all(file);
+
+	fclose(file);
+	return ret;
 }
 
 void page_owner_set_filepath(char *path) {
