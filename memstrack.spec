@@ -29,7 +29,7 @@ booting stage memory usage.
 
 %build
 %{set_build_flags}
-make %{?_smp_mflags}
+%make_build
 
 %install
 # memstrack binary
