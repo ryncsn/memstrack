@@ -344,7 +344,6 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
 	struct Tracenode *tracenode, *last = NULL;
 	unsigned long pfn_off;
 
-	page_free_counter += nr_pages;
 	pfn_off = pfn_start;
 
 	while (nr_pages--) {
@@ -353,6 +352,7 @@ static void record_page_free(unsigned long pfn_start, unsigned long nr_pages) {
 		if (last != tracenode) {
 			if (last)
 				do_record_page_free(last, pfn_off - pfn_start);
+			page_free_counter += pfn_off - pfn_start;
 			pfn_start = pfn_off;
 			last = tracenode;
 		}
