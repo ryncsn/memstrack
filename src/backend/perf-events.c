@@ -267,7 +267,7 @@ const struct perf_event_table_entry perf_event_table[] = {
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);
 
-int perf_prepare_events(int buf_size)
+int perf_init(int buf_size)
 {
 	int ret;
 	int perf_event_enabled_num = 0;
@@ -322,6 +322,8 @@ int perf_prepare_events(int buf_size)
 	}
 
 	log_debug("Perf buffer size aligned to %ld (%lxMB) per CPU.\n", aligned_buf_size, aligned_buf_size >> 20);
+
+	trampo_page = malloc(page_size);
 
 	return perf_event_enabled_num;
 }
@@ -393,8 +395,6 @@ int perf_ring_start_sampling(struct PerfEventRing *ring) {
 	if (ret) {
 		log_error("Failed to start perf sampling!\n");
 	}
-
-	trampo_page = malloc(page_size);
 
 	return ret;
 }

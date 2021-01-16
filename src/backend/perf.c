@@ -41,7 +41,7 @@ int perf_handling_init() {
 	int cpu_num = perf_get_cpu_num();
 	const struct perf_event_table_entry *entry;
 
-	ret = perf_prepare_events(perf_buf_size_per_cpu);
+	ret = perf_init(perf_buf_size_per_cpu);
 	if (ret < 0) {
 		return ret;
 	}
