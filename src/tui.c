@@ -31,12 +31,7 @@
 #include "memstrack.h"
 #include "tracing.h"
 
-#define MAX_TASK_VIEW 64
-#define MAX_CALLSITE_VIEW 64
-#define MISC_PAD 4
-// Show 300 lines at most
-#define MAX_VIEW 300
-#define UI_FD_NUMS 2
+#define MISC_PAD 3
 
 struct TracenodeViewData {
 	bool expended;
@@ -274,9 +269,10 @@ static void update_ui(WINDOW *trace_win) {
 	}
 
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules\n");
-	mvprintw(1, 0, "Trace counter: %lu\n", trace_count);
-	mvprintw(2, 0, "Total allocated: %luMB\n", page_alloc_counter * page_size / SIZE_MB);
-	mvprintw(3, 0, "Total Freed: %luMB\n", page_free_counter * page_size / SIZE_MB);
+	mvprintw(1, 0, "Events captured: %lu\n", trace_count);
+	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
+			(page_alloc_counter - page_free_counter),
+			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);
 	refresh();
 
 	update_tracewin(trace_win);

@@ -87,7 +87,7 @@ static void report_task_summary (struct reporter_fmt* fmt) {
 	free(tasks);
 };
 
-static void report_task_top (struct reporter_fmt* fmt) {
+static void report_task_top(struct reporter_fmt* fmt) {
 	int task_num;
 	long nr_pages_limit;
 	struct Task **tasks;
@@ -108,7 +108,7 @@ static void report_task_top_json(struct reporter_fmt* fmt) {
 	long nr_pages_limit;
 	struct Task **tasks;
 
-	nr_pages_limit = page_alloc_counter - page_free_counter;
+	nr_pages_limit = overall_page_limit(fmt->throttle);
 	tasks = collect_tasks_sorted(0, &task_num);
 
 	log_info("[\n");

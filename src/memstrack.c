@@ -273,9 +273,7 @@ int main(int argc, char **argv) {
 					log_error("--buf-size expects an integer  0.\n");
 					exit(1);
 				}
-
 				perf_buf_size_per_cpu = m_buf_size << 20;
-
 				break;
 			case 'p':
 				page_owner_set_filepath(strdup(optarg));
