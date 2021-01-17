@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
 #include <malloc.h>
 #include <poll.h>
 #include <ncurses.h>
@@ -32,16 +33,201 @@
 #include "tracing.h"
 
 #define MISC_PAD 3
+#define NON_LAST_CHILD_INDENT '|'
+#define NON_LAST_CHILD_PREFIX '+'
+#define NON_LAST_CHILD_PREFIX_EXT '-'
+#define LAST_CHILD_INDENT ' '
+#define LAST_CHILD_PREFIX '+'
+#define LAST_CHILD_PREFIX_EXT '-'
 
-struct TracenodeViewData {
-	bool expended;
+/* To manage tracenodes, sorted and indexed */
+struct TracenodeView {
+	union {
+		bool expended;
+		int height;
+	};
+	int pid;
+	int rev_index;
+	char *title;
+	struct Record rec;
+	struct Tracenode *tracenode;
+	struct TracenodeView *parent;
 };
 
-static enum ui_type {
+static struct Tracenode **top_tracenodes;
+static struct TracenodeView *tracenode_views;
+static int top_tracenode_num;
+static int tracenode_view_num;
+
+static WINDOW *trace_win;
+
+#define LINE_BUF_LEN 4096
+struct {
+	int offset_row;
+	int offset_col;
+	int highlight_line;
+	int line_num;
+	int active_line_num;
+
+	bool console_too_small;
+
+	int line_len;
+	char *line_buf;
+	char *line_cur;
+} tui_info;
+
+static enum {
 	UI_TYPE_TASK = 0,
 	UI_TYPE_MODULE,
 	UI_TYPE_MAX
 } ui_type;
+
+static int is_tracenode_self(struct Tracenode* node, void *blob) {
+	if (node == blob) {
+		return 1;
+	}
+
+	return 0;
+}
+
+/* By the time the TUI try to access a tracenode,
+ * it might have been released, check before access it */
+static bool is_tracenode_view_stall(struct TracenodeView* node) {
+	if (node->parent) {
+		if (is_tracenode_view_stall(node->parent)) {
+			return true;
+		}
+
+		if (for_each_tracenode_ret(
+					node->parent->tracenode->children,
+					is_tracenode_self, node->tracenode)) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/* Assumes top views won't stall */
+	return false;
+}
+
+static void update_top_tracenodes(void) {
+	if (top_tracenodes) {
+		free(top_tracenodes);
+		top_tracenodes = NULL;
+	}
+
+	if (ui_type == UI_TYPE_TASK) {
+		top_tracenodes = (struct Tracenode**) collect_tasks_sorted(1, &top_tracenode_num);
+	} else {
+		top_tracenodes = (struct Tracenode**) collect_modules_sorted(1);
+		top_tracenode_num = module_map.size;
+	}
+};
+
+static void calc_tracenode_view_num_iter(struct Tracenode *node, void *_) {
+	tracenode_view_num += 1;
+
+	if (is_tracenode_extended(node)) {
+		for_each_tracenode(node->children, calc_tracenode_view_num_iter, NULL);
+	}
+}
+
+static void recalc_tracenode_view_num(void) {
+	tracenode_view_num = 0;
+	for (int i = 0; i < top_tracenode_num; ++i) {
+		calc_tracenode_view_num_iter(top_tracenodes[i], NULL);
+	}
+}
+
+struct sync_marker {
+	struct TracenodeView *parent;
+	int cur_row;
+	int rev_index;
+};
+
+static int tracenode_view_sync(struct Tracenode *node, struct sync_marker *marker) {
+	struct TracenodeView *view;
+
+	view = &tracenode_views[marker->cur_row];
+	marker->cur_row++;
+
+	view->tracenode = node;
+	view->parent = marker->parent;
+	view->rev_index = marker->rev_index;
+	view->height = 0;
+
+	if (node->record)
+		memcpy(&view->rec, node->record, sizeof(struct Record));
+	else
+		memset(&view->rec, 0, sizeof(struct Record));
+
+	if (!node->parent) {
+		if (ui_type == UI_TYPE_TASK) {
+			struct Task *task = container_of(node, struct Task, tracenode);
+			view->pid = task->pid;
+			view->title = strdup(task->task_name);
+		} else {
+			struct Module *module = container_of(node, struct Module, tracenode);
+			view->title = strdup(module->name);
+		}
+	} else {
+		view->title = strdup(get_tracenode_symbol(node));
+	}
+
+	if (is_tracenode_extended(node)) {
+		struct Tracenode** nodes;
+		int count;
+
+		nodes = collect_tracenodes_sorted(node->children, &count, 1);
+		for (int i = 0; i < count; ++i) {
+			marker->rev_index = count - i;
+			marker->parent = view;
+			view->height += tracenode_view_sync(nodes[i], marker);
+		}
+
+		free(nodes);
+	}
+
+	return view->height;
+}
+
+static void sync_tracenode_views(void) {
+	struct sync_marker marker = { 0 };
+
+	for (int i = 0; i < tracenode_view_num; ++i) {
+		free(tracenode_views[i].title);
+		tracenode_views[i].title = NULL;
+	}
+
+	recalc_tracenode_view_num();
+
+	if (tracenode_views)
+		tracenode_views = realloc(tracenode_views, sizeof(struct TracenodeView) * tracenode_view_num);
+	else
+		tracenode_views = calloc(tracenode_view_num, sizeof(struct TracenodeView));
+
+	for (int i = 0; i < top_tracenode_num; ++i) {
+		marker.rev_index = top_tracenode_num - i;
+		marker.parent = NULL;
+		tracenode_view_sync(top_tracenodes[i], &marker);
+	}
+}
+
+static int toggle_tracenode_view(struct TracenodeView *view) {
+	int ret = 0;
+
+	if (is_tracenode_view_stall(view)) {
+		return -1;
+	}
+
+	if (is_tracenode_extended(view->tracenode))
+		unextend_tracenode(view->tracenode);
+	else
+		extend_tracenode(view->tracenode);
+
+	return ret;
+}
 
 static struct pollfd *ui_fds;
 static int gen_timerfd(unsigned int period)
@@ -83,161 +269,108 @@ void tui_apply_fds(struct pollfd *fds) {
 	ui_fds = fds;
 }
 
-static struct Tracenode **top_tracenodes;
-static int tracenode_num;
-
-static void update_top_tracenodes(void) {
-	struct Record *record;
-
-	if (top_tracenodes)
-		free(top_tracenodes);
-
-	// TODO: No need to free / alloc every time
-	if (ui_type == UI_TYPE_TASK) {
-		top_tracenodes = (struct Tracenode**) collect_tasks_sorted(1, &tracenode_num);
-	} else {
-		top_tracenodes = (struct Tracenode**) collect_modules_sorted(1);
-		tracenode_num = module_map.size;
-	}
-
-	for (int i = 0; i < tracenode_num; ++i) {
-		record = (top_tracenodes[i])->record;
-		if (!record->blob)
-			record->blob = calloc(1, sizeof(struct TracenodeViewData));
-	}
-};
-
-/*
- * For tracenode info output
- * TODO: Use a window properly
- */
-static int line_highlight;
-static WINDOW *trace_win;
-
-struct {
-	int current;
-	int offset;
-	int limit;
-
-	bool enabled;
-
-	int line_len;
-	char *line_buf;
-} tui_info;
-
-static int try_extend_tracenode(struct Tracenode *node, int *curr_line) {
-	struct Tracenode** nodes;
-	struct TracenodeViewData *view;
-	int count, ret = 0;
-
-	if (!curr_line)
-		return -1;
-
-	if (!node->record)
-		return ret;
-
-	if (!node->record->blob)
-		node->record->blob = calloc(1, sizeof(struct TracenodeViewData));
-
-	view = node->record->blob;
-
-	if ((*curr_line)++ == line_highlight) {
-		view->expended = !view->expended;
-		// TODO: When should all sub records be freed?
-		// if (!view->expended && !is_task) {
-		// 	depopulate_tracenode(node);
-		// }
-		return -1;
-	}
-
-	if (view->expended && node->children) {
-		nodes = collect_tracenodes_sorted(node->children, &count, 1);
-		for (int i = 0; i < count; ++i) {
-			ret = try_extend_tracenode(nodes[i], curr_line);
-			if (ret)
-				break;
-		}
-		free(nodes);
-	}
-
-	return ret;
+static bool is_last_child(struct TracenodeView *view) {
+	return view->rev_index == 1;
 }
 
-static void expend_line(int line) {
-	int curr_line = 0;
+static int line_buf_putchar(char c) {
+	if ((tui_info.line_cur - tui_info.line_buf) >= (tui_info.line_len - 1))
+		return -1;
 
-	for (int i = 0; i < tracenode_num; ++i) {
-		if (try_extend_tracenode(top_tracenodes[i], &curr_line))
-			break;
-	}
+	*tui_info.line_cur = c;
+	tui_info.line_cur++;
+
+	return 0;
 }
 
-static int tui_print_tracenode(WINDOW *tracewin, struct Tracenode *node, int indent) {
-	struct Tracenode** nodes;
-	struct TracenodeViewData *view;
+static int line_buf_puts(char *s) {
+	int len = strlen(s);
+	int left = (tui_info.line_len - (tui_info.line_cur - tui_info.line_buf + len + 1));
 
-	int count, ret = 0;
-	char expand_sym;
+	if (left < 0)
+		return -1;
 
-	if (!node->record)
-		return ret;
+	if (left < len)
+		len = left;
 
-	if (!node->record->blob)
-		node->record->blob = calloc(1, sizeof(struct TracenodeViewData));
+	/* Omit the \0, will always set a \0 later */
+	strncpy(tui_info.line_cur, s, len);
+	tui_info.line_cur += len;
 
-	view = node->record->blob;
+	return 0;
+}
 
-	if (view->expended)
-		expand_sym = '|';
-	else
-		expand_sym = '+';
+static void print_tracenode_view(
+		struct TracenodeView *view,
+		WINDOW *tracewin,
+		int row, int col)
+{
+	struct TracenodeView *parent;
+	parent = view->parent;
 
-	if (indent == 0) {
+	if (!parent) {
 		/* It's a task / module */
 		if (ui_type == UI_TYPE_TASK) {
-			struct Task *task = container_of(node, struct Task, tracenode);
 			snprintf(tui_info.line_buf, tui_info.line_len,
-				"%c %7ld | %10ld | %s\n",
-				expand_sym, task->pid, task->tracenode.record->pages_alloc, task->task_name);
+				 " %7d | %10ld | %10ld | ",
+				 view->pid,
+				 view->rec.pages_alloc,
+				 view->rec.pages_alloc_peak);
+			tui_info.line_cur = tui_info.line_buf + strlen(tui_info.line_buf);
+			line_buf_puts(view->title);
 		} else {
-			struct Module *module = container_of(node, struct Module, tracenode);
 			snprintf(tui_info.line_buf, tui_info.line_len,
-				 "%c %10ld |%s\n",
-				 expand_sym, module->tracenode.record->pages_alloc, module->name);
+				 "     [M] | %10ld | %10ld | ",
+				 view->rec.pages_alloc,
+				 view->rec.pages_alloc_peak);
+			tui_info.line_cur = tui_info.line_buf + strlen(tui_info.line_buf);
+			line_buf_puts(view->title);
 		}
 	} else {
-		/* It's sub tracenode */
-		int i; for (i = 0; i < indent && i < tui_info.line_len / 2; ++i)
-			tui_info.line_buf[i] = ' ';
+		char *st_start, *st_end;
 
-		snprintf(tui_info.line_buf + i, tui_info.line_len - i,
-			   "%c | %10ld | %s\n", expand_sym, node->record->pages_alloc, get_tracenode_symbol(node));
+		snprintf(tui_info.line_buf, tui_info.line_len,
+			 "         | %10ld | %10ld | ",
+			 view->rec.pages_alloc,
+			 view->rec.pages_alloc_peak);
+		tui_info.line_cur = tui_info.line_buf + strlen(tui_info.line_buf);
+
+		st_start = tui_info.line_cur;
+		while (parent) {
+			line_buf_putchar(is_last_child(parent) ?
+					LAST_CHILD_INDENT :
+					NON_LAST_CHILD_INDENT);
+			parent = parent->parent;
+		}
+		st_end = tui_info.line_cur - 1;
+
+		while (st_start < st_end) {
+			*st_start += *st_end;
+			*st_end = *st_start - *st_end;
+			*st_start -= *st_end;
+			st_start++;
+			st_end--;
+		}
+
+		line_buf_putchar(is_last_child(view) ?
+				 view->expended ?
+					 LAST_CHILD_PREFIX_EXT : LAST_CHILD_PREFIX :
+				 view->expended ?
+					 NON_LAST_CHILD_PREFIX_EXT : NON_LAST_CHILD_PREFIX);
+		line_buf_putchar(' ');
+		line_buf_puts(view->title);
 	}
 
-	tui_info.line_buf[tui_info.line_len] = '\0';
+	*tui_info.line_cur = '\0';
+	tui_info.line_buf[tui_info.line_len - 1] = '\0';
 
-	if (tui_info.current == line_highlight) {
+	if (row == tui_info.highlight_line) {
 		wattron(tracewin, A_REVERSE);
-		mvwprintw(tracewin, tui_info.current + 1, 1,  "%s", tui_info.line_buf);
+		mvwprintw(tracewin, row + 1, 1,  "%s", tui_info.line_buf);
 		wattroff(tracewin, A_REVERSE);
 	} else {
-		mvwprintw(tracewin, tui_info.current + 1, 1,  "%s", tui_info.line_buf);
+		mvwprintw(tracewin, row + 1, 1,  "%s", tui_info.line_buf);
 	}
-
-	if (tui_info.current++ > tui_info.limit)
-		return -1;
-
-	if (view->expended && node->children) {
-		nodes = collect_tracenodes_sorted(node->children, &count, 1);
-		for (int i = 0; i < count; ++i) {
-			ret = tui_print_tracenode(tracewin, nodes[i], indent + 1);
-			if (ret)
-				break;
-		}
-		free(nodes);
-	}
-
-	return ret;
 }
 
 static void update_tracewin(WINDOW *tracewin) {
@@ -247,26 +380,36 @@ static void update_tracewin(WINDOW *tracewin) {
 
 	/* Window title bar */
 	if (ui_type == UI_TYPE_TASK) {
-		mvwprintw(tracewin, 0, 1, "    PID   |    Pages   |    Process Command Line\n");
+		mvwprintw(tracewin, 0, 1, "   PID   |    Pages   |    Peak    |   Process Command Line\n");
 	} else {
-		mvwprintw(tracewin, 0, 1, "    Pages    |    Module Name   \n");
+		mvwprintw(tracewin, 0, 1, "         |    Pages   |    Peak    |   Module Name   \n");
 	}
 
-	tui_info.current = 0;
+	tui_info.active_line_num = 0;
+	for (int i = 0, j; i < tui_info.line_num; ++i) {
+		j = tui_info.offset_row + i;
+		if (j >= tracenode_view_num)
+			break;
 
-	// TODO: only work when it's single thread
-	for (int task_n = 0; task_n < tracenode_num; ++task_n) {
-		if (tui_print_tracenode(tracewin, top_tracenodes[task_n], 0))
-			return;
+		tui_info.active_line_num++;
+		print_tracenode_view(tracenode_views + j, trace_win, i, 0);
 	}
+
+	wrefresh(trace_win);
 }
 
 static void update_ui(WINDOW *trace_win) {
-	if (!tui_info.enabled) {
+	if (tui_info.console_too_small) {
 		mvprintw(0, 0, "Console is too small\n");
 		refresh();
 		return;
 	}
+
+	if (tui_info.highlight_line >= tui_info.active_line_num)
+		tui_info.highlight_line = tui_info.active_line_num - 1;
+
+	if (tui_info.highlight_line < 0)
+		tui_info.highlight_line = 0;
 
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules\n");
 	mvprintw(1, 0, "Events captured: %lu\n", trace_count);
@@ -276,17 +419,16 @@ static void update_ui(WINDOW *trace_win) {
 	refresh();
 
 	update_tracewin(trace_win);
-	wrefresh(trace_win);
 }
 
 int tui_update_size(void) {
 	int win_startx, win_starty, win_width, win_height;
 
 	if (COLS < 16 || LINES < 8) {
-		tui_info.enabled = 0;
+		tui_info.console_too_small = 1;
 		return -1;
 	} else {
-		tui_info.enabled = 1;
+		tui_info.console_too_small = 0;
 	}
 
 	win_height = LINES - MISC_PAD; // 4 line above for info
@@ -300,16 +442,15 @@ int tui_update_size(void) {
 	trace_win = newwin(win_height, win_width, win_starty, win_startx);
 
 	tui_info.line_len = COLS - 3;
-	tui_info.line_buf = malloc(tui_info.line_len + 1);
-
-	tui_info.limit = LINES - MISC_PAD - 4;
-	tui_info.offset = MISC_PAD + 1;
+	tui_info.line_buf = malloc(COLS - 3);
+	tui_info.line_num = LINES - MISC_PAD - 4;
 
 	return 0;
 }
 
 void tui_init(void) {
 	need_page_free_always_backtrack();
+	need_tracenode_extendable();
 
 	load_kallsyms();
 	initscr();
@@ -341,6 +482,7 @@ void tui_loop(void) {
 				ui_type++;
 				if (ui_type >= UI_TYPE_MAX)
 					ui_type = 0;
+				update_top_tracenodes();
 				break;
 
 			case 'r':
@@ -349,23 +491,19 @@ void tui_loop(void) {
 				break;
 
 			case ' ':
-				expend_line(line_highlight + MISC_PAD);
+				toggle_tracenode_view(tracenode_views + tui_info.highlight_line);
+				sync_tracenode_views();
 				break;
 
 			case KEY_UP:
-				line_highlight--;
-				if (line_highlight < 0)
-					line_highlight = 0;
+				tui_info.highlight_line--;
 				break;
 
 			case KEY_DOWN:
-				line_highlight++;
-				if (line_highlight > LINES - MISC_PAD)
-					line_highlight = LINES - MISC_PAD;
+				tui_info.highlight_line++;
 				break;
 		}
 
-		update_top_tracenodes();
 		update_ui(trace_win);
 	}
 
@@ -374,6 +512,7 @@ void tui_loop(void) {
 		ret = read(ui_fds[1].fd, &time, sizeof(time));
 		if (ret) {
 			update_top_tracenodes();
+			sync_tracenode_views();
 			update_ui(trace_win);
 		}
 	}

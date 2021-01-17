@@ -18,6 +18,7 @@
  */
 
 #include "utils.h"
+#include "stdbool.h"
 #ifndef _MEMORY_TRACER_TRACING_LIB
 
 #define to_tracenode(task_or_module_p) (&task_or_module_p->tracenode)
@@ -37,8 +38,6 @@ struct Record {
 
 	long pages_alloc;
 	long pages_alloc_peak;
-
-	void *blob;
 };
 
 struct Tracenode {
@@ -108,10 +107,16 @@ void store_symbol_instead(void);
 void need_page_free_always_backtrack(void);
 
 char* get_tracenode_symbol(struct Tracenode *node);
+int get_tracenode_num(struct Tracenode *root);
 
 void populate_tracenode_shallow(struct Tracenode* tracenode);
 void populate_tracenode(struct Tracenode* tracenode);
 void depopulate_tracenode(struct Tracenode* tracenode);
+
+void need_tracenode_extendable(void);
+void extend_tracenode(struct Tracenode* tracenode);
+void unextend_tracenode(struct Tracenode* tracenode);
+bool is_tracenode_extended(struct Tracenode *node);
 
 struct Tracenode* get_child_tracenode(struct Tracenode *root, void *key);
 struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key);

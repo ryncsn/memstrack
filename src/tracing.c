@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/mman.h>
 
@@ -39,7 +40,12 @@ unsigned long page_alloc_counter, page_free_counter;
 static unsigned long max_pfn, start_pfn;
 static unsigned int trivial_peak_limit = 64;
 
-static unsigned int page_free_always_backtrack;
+static bool page_free_always_backtrack;
+/* Used by TUI currently, allow to mark a tracenode extended,
+ * so when any event happened to child of the tracenode, the
+ * info of the extended tracenode will be updated */
+static bool tracenode_extendable;
+
 enum key_type {
 	KEY_ADDR = 0,
 	KEY_SYMBOL,
@@ -53,6 +59,24 @@ void store_symbol_instead(void) {
 // Used for UI, need to update the whole stack trace tree on page free
 void need_page_free_always_backtrack(void) {
 	page_free_always_backtrack = 1;
+}
+
+void need_tracenode_extendable(void) {
+	tracenode_extendable = 1;
+}
+
+bool is_tracenode_extended(struct Tracenode *node) {
+	if (!tracenode_extendable)
+		return false;
+
+	/* If a tracenode is extended, all of its direct children
+	 * have record. Else, none of its child has record.
+	 * For the tracenode that have a child which presents a stack top,
+	 * it's always extended */
+	if (node->children && node->children->record)
+		return true;
+
+	return false;
 }
 
 struct Symbol {
@@ -253,10 +277,6 @@ static int compTracenode(const struct TreeNode *root, const void *key) {
 }
 
 static void free_tracenode_record(struct Tracenode *tracenode) {
-	if (tracenode->record->blob) {
-		free(tracenode->record->blob);
-	}
-
 	free(tracenode->record);
 	tracenode->record = NULL;
 }
@@ -478,6 +498,10 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 		tracenode = (struct Tracenode*)calloc(1, sizeof(struct Tracenode));
 		tracenode->key = key;
 		tracenode->parent = root;
+
+		if (is_tracenode_extended(root))
+			populate_tracenode(tracenode);
+
 		insert_child_tracenode(root, tracenode);
 	}
 
@@ -667,22 +691,20 @@ int for_each_tracenode_ret(
 {
 	int ret;
 	ret = op(root, blob);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	if (have_left_child(root, node)) {
 		ret = for_each_tracenode_ret(left_child(root, struct Tracenode, node),
 				op, blob);
 	}
-
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	if (have_right_child(root, node)) {
 		ret = for_each_tracenode_ret(right_child(root, struct Tracenode, node),
 				op, blob);
 	}
-
 	return ret;
 }
 
@@ -701,33 +723,36 @@ void for_each_tracenode(
 	}
 }
 
-static void do_depopulate_tracenode(struct Tracenode* tracenode, void *blob) {
-	if (tracenode->record && tracenode->children) {
-		free_tracenode_record(tracenode);
-		for_each_tracenode(tracenode->children, do_depopulate_tracenode, NULL);
-	}
-}
-
-void depopulate_tracenode(struct Tracenode* tracenode) {
-	do_depopulate_tracenode(tracenode, NULL);
-}
-
 /*
- * Allocation info is only recorded at the tracenode represents the top of stack
- * for better performacne, need to collect the info before generate report
+ * Allocation info is usually only recorded at the tracenode represents the top
+ * of stack for better performacne, need to collect the info before generate
+ * report or read info out of a node
  */
-static void do_populate_tracenode(struct Tracenode* tracenode, void *blob) {
+static void do_populate_tracenode_iter(struct Tracenode* tracenode, void *blob) {
 	struct Record *parent_record = (struct Record*)blob;
 
-	if (tracenode->record == NULL) {
+	if (tracenode->record) {
+		parent_record->pages_alloc += tracenode->record->pages_alloc;
+		parent_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
+	} else if (tracenode->children) {
 		tracenode->record = calloc(1, sizeof(struct Record));
-
-		if (tracenode->children)
-			for_each_tracenode(tracenode->children, do_populate_tracenode, tracenode->record);
+		for_each_tracenode(tracenode->children, do_populate_tracenode_iter, tracenode->record);
+	} else {
+		log_error("BUG: Empty Tracenode\n");
 	}
+}
 
-	parent_record->pages_alloc += tracenode->record->pages_alloc;
-	parent_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
+static void do_populate_tracenode_shallow_iter(struct Tracenode* tracenode, void *blob) {
+	struct Record *root_record = (struct Record*)blob;
+
+	if (tracenode->record) {
+		root_record->pages_alloc += tracenode->record->pages_alloc;
+		root_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
+	} else if (tracenode->children) {
+		for_each_tracenode(tracenode->children, do_populate_tracenode_shallow_iter, blob);
+	} else {
+		log_error("BUG: Empty Tracenode\n");
+	}
 }
 
 void populate_tracenode(struct Tracenode* tracenode) {
@@ -738,20 +763,7 @@ void populate_tracenode(struct Tracenode* tracenode) {
 	}
 
 	if (tracenode->children)
-		for_each_tracenode(tracenode->children, do_populate_tracenode, tracenode->record);
-}
-
-static void collect_child_info(struct Tracenode* tracenode, void *blob) {
-	struct Record *root_record = (struct Record*)blob;
-
-	if (tracenode->record) {
-		root_record->pages_alloc += tracenode->record->pages_alloc;
-		root_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
-	} else if (tracenode->children) {
-		for_each_tracenode(tracenode->children, collect_child_info, blob);
-	} else {
-		log_debug("BUG: Empty Tracenode\n");
-	}
+		for_each_tracenode(tracenode->children, do_populate_tracenode_iter, tracenode->record);
 }
 
 void populate_tracenode_shallow(struct Tracenode* tracenode) {
@@ -762,7 +774,54 @@ void populate_tracenode_shallow(struct Tracenode* tracenode) {
 	}
 
 	if (tracenode->children)
-		for_each_tracenode(tracenode->children, collect_child_info, tracenode->record);
+		for_each_tracenode(tracenode->children, do_populate_tracenode_shallow_iter, tracenode->record);
+}
+
+static void __populate_tracenode_shallow_iter(struct Tracenode *node, void *_) {
+	populate_tracenode_shallow(node);
+}
+
+void extend_tracenode(struct Tracenode* tracenode) {
+	if (tracenode->children)
+		for_each_tracenode(tracenode->children,
+				   __populate_tracenode_shallow_iter,
+				   tracenode->record);
+}
+
+static void do_depopulate_tracenode_shallow_iter(struct Tracenode* tracenode, void *_) {
+	if (tracenode->record && tracenode->children) {
+		free_tracenode_record(tracenode);
+	}
+}
+
+static void do_depopulate_tracenode_iter(struct Tracenode* tracenode, void *_) {
+	if (tracenode->record && tracenode->children) {
+		free_tracenode_record(tracenode);
+		for_each_tracenode(tracenode->children, do_depopulate_tracenode_iter, NULL);
+	}
+}
+
+void depopulate_tracenode(struct Tracenode* tracenode) {
+	if (tracenode->record && tracenode->children) {
+		free_tracenode_record(tracenode);
+		for_each_tracenode(tracenode->children, do_depopulate_tracenode_iter, NULL);
+	}
+}
+
+void depopulate_tracenode_shallow(struct Tracenode* tracenode) {
+	if (tracenode->record && tracenode->children) {
+		free_tracenode_record(tracenode);
+		for_each_tracenode(tracenode->children,
+				   do_depopulate_tracenode_shallow_iter,
+				   NULL);
+	}
+}
+
+void unextend_tracenode(struct Tracenode* tracenode) {
+	if (tracenode->children)
+		for_each_tracenode(tracenode->children,
+				   do_depopulate_tracenode_shallow_iter,
+				   NULL);
 }
 
 static int comp_tracenode_mem(const void *x, const void *y) {
@@ -786,7 +845,7 @@ static void tracenode_iter_count(struct Tracenode* _, void *blob) {
 	*count += 1;
 }
 
-static int count_tracenodes(struct Tracenode *root) {
+int get_tracenode_num(struct Tracenode *root) {
 	int count = 0;
 	for_each_tracenode(root, tracenode_iter_count, &count);
 	return count;
@@ -801,7 +860,7 @@ static void tracenode_iter_collect(struct Tracenode* node, void *blob) {
 struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *count, int shallow) {
 	struct Tracenode **nodes, **tail;
 
-	*count = count_tracenodes(root);
+	*count = get_tracenode_num(root);
 	tail = nodes = calloc(*count * sizeof(struct Tracenode*), 1);
 	for_each_tracenode(root, tracenode_iter_collect, &tail);
 
