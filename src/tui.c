@@ -285,7 +285,7 @@ static int line_buf_putchar(char c) {
 
 static int line_buf_puts(char *s) {
 	int len = strlen(s);
-	int left = (tui_info.line_len - (tui_info.line_cur - tui_info.line_buf + len + 1));
+	int left = (tui_info.line_len - (tui_info.line_cur - tui_info.line_buf + 1));
 
 	if (left < 0)
 		return -1;
@@ -303,10 +303,15 @@ static int line_buf_puts(char *s) {
 static void print_tracenode_view(
 		struct TracenodeView *view,
 		WINDOW *tracewin,
-		int row, int col)
+		int row)
 {
+	int title_offset;
 	struct TracenodeView *parent;
 	parent = view->parent;
+
+	title_offset = strlen(view->title);
+	if (tui_info.col_offset < title_offset)
+		title_offset = tui_info.col_offset;
 
 	if (!parent) {
 		/* It's a task / module */
@@ -317,14 +322,14 @@ static void print_tracenode_view(
 				 view->rec.pages_alloc,
 				 view->rec.pages_alloc_peak);
 			tui_info.line_cur = tui_info.line_buf + strlen(tui_info.line_buf);
-			line_buf_puts(view->title);
+			line_buf_puts(view->title + title_offset);
 		} else {
 			snprintf(tui_info.line_buf, tui_info.line_len,
 				 "     [M] | %10ld | %10ld | ",
 				 view->rec.pages_alloc,
 				 view->rec.pages_alloc_peak);
 			tui_info.line_cur = tui_info.line_buf + strlen(tui_info.line_buf);
-			line_buf_puts(view->title);
+			line_buf_puts(view->title + title_offset);
 		}
 	} else {
 		char *st_start, *st_end;
@@ -358,11 +363,11 @@ static void print_tracenode_view(
 				 view->expended ?
 					 NON_LAST_CHILD_PREFIX_EXT : NON_LAST_CHILD_PREFIX);
 		line_buf_putchar(' ');
-		line_buf_puts(view->title);
+		line_buf_puts(view->title + title_offset);
 	}
 
 	*tui_info.line_cur = '\0';
-	tui_info.line_buf[tui_info.line_len - 1] = '\0';
+	tui_info.line_buf[tui_info.line_len] = '\0';
 
 	if (row == tui_info.highlight_line) {
 		wattron(tracewin, A_REVERSE);
@@ -400,6 +405,9 @@ static void update_tracewin(WINDOW *tracewin) {
 	if (tui_info.row_offset < 0)
 		tui_info.row_offset = 0;
 
+	if (tui_info.col_offset < 0)
+		tui_info.col_offset = 0;
+
 	tui_info.active_line_num = 0;
 	for (int i = 0, j; i < tui_info.row_num; ++i) {
 		j = tui_info.row_offset + i;
@@ -407,7 +415,7 @@ static void update_tracewin(WINDOW *tracewin) {
 			break;
 
 		tui_info.active_line_num++;
-		print_tracenode_view(tracenode_views + j, trace_win, i, 0);
+		print_tracenode_view(tracenode_views + j, trace_win, i);
 	}
 
 	wrefresh(trace_win);
@@ -451,7 +459,7 @@ int tui_update_size(void) {
 	trace_win = newwin(win_height, win_width, win_starty, win_startx);
 
 	tui_info.line_len = COLS - 2;
-	tui_info.line_buf = malloc(COLS - 2);
+	tui_info.line_buf = malloc(COLS - 2 + 1);
 	tui_info.row_num = LINES - MISC_PAD - 2;
 
 	return 0;
@@ -502,6 +510,14 @@ void tui_loop(void) {
 			case ' ':
 				toggle_tracenode_view(tracenode_views + tui_info.highlight_line);
 				sync_tracenode_views();
+				break;
+
+			case KEY_RIGHT:
+				tui_info.col_offset++;
+				break;
+
+			case KEY_LEFT:
+				tui_info.col_offset--;
 				break;
 
 			case KEY_UP:
