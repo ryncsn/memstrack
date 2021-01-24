@@ -731,15 +731,15 @@ void for_each_tracenode(
 static void do_populate_tracenode_iter(struct Tracenode* tracenode, void *blob) {
 	struct Record *parent_record = (struct Record*)blob;
 
-	if (tracenode->record) {
-		parent_record->pages_alloc += tracenode->record->pages_alloc;
-		parent_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
-	} else if (tracenode->children) {
+	if (tracenode->record == NULL) {
 		tracenode->record = calloc(1, sizeof(struct Record));
-		for_each_tracenode(tracenode->children, do_populate_tracenode_iter, tracenode->record);
-	} else {
-		log_error("BUG: Empty Tracenode\n");
+
+		if (tracenode->children)
+			for_each_tracenode(tracenode->children, do_populate_tracenode_iter, tracenode->record);
 	}
+
+	parent_record->pages_alloc += tracenode->record->pages_alloc;
+	parent_record->pages_alloc_peak += tracenode->record->pages_alloc_peak;
 }
 
 static void do_populate_tracenode_shallow_iter(struct Tracenode* tracenode, void *blob) {
