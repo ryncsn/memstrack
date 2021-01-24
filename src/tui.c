@@ -62,11 +62,11 @@ static int tracenode_view_num;
 static WINDOW *trace_win;
 
 #define LINE_BUF_LEN 4096
-struct {
-	int offset_row;
-	int offset_col;
+static struct {
+	int row_offset;
+	int col_offset;
+	int row_num;
 	int highlight_line;
-	int line_num;
 	int active_line_num;
 
 	bool console_too_small;
@@ -385,9 +385,24 @@ static void update_tracewin(WINDOW *tracewin) {
 		mvwprintw(tracewin, 0, 1, "         |    Pages   |    Peak    |   Module Name   \n");
 	}
 
+	if (tui_info.highlight_line >= tui_info.active_line_num)
+		tui_info.highlight_line = tui_info.active_line_num - 1;
+
+	if (tui_info.highlight_line < 0)
+		tui_info.highlight_line = 0;
+
+	if (tui_info.highlight_line < 0)
+		tui_info.highlight_line = 0;
+
+	if (tui_info.row_offset > tracenode_view_num - tui_info.row_num)
+		tui_info.row_offset = tracenode_view_num - tui_info.row_num;
+
+	if (tui_info.row_offset < 0)
+		tui_info.row_offset = 0;
+
 	tui_info.active_line_num = 0;
-	for (int i = 0, j; i < tui_info.line_num; ++i) {
-		j = tui_info.offset_row + i;
+	for (int i = 0, j; i < tui_info.row_num; ++i) {
+		j = tui_info.row_offset + i;
 		if (j >= tracenode_view_num)
 			break;
 
@@ -405,14 +420,8 @@ static void update_ui(WINDOW *trace_win) {
 		return;
 	}
 
-	if (tui_info.highlight_line >= tui_info.active_line_num)
-		tui_info.highlight_line = tui_info.active_line_num - 1;
-
-	if (tui_info.highlight_line < 0)
-		tui_info.highlight_line = 0;
-
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules\n");
-	mvprintw(1, 0, "Events captured: %lu\n", trace_count);
+	mvprintw(1, 0, "Events captured: %lu\n", trace_count, tui_info.highlight_line, tui_info.row_num, tui_info.row_offset);
 	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
 			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);
@@ -441,9 +450,9 @@ int tui_update_size(void) {
 
 	trace_win = newwin(win_height, win_width, win_starty, win_startx);
 
-	tui_info.line_len = COLS - 3;
-	tui_info.line_buf = malloc(COLS - 3);
-	tui_info.line_num = LINES - MISC_PAD - 4;
+	tui_info.line_len = COLS - 2;
+	tui_info.line_buf = malloc(COLS - 2);
+	tui_info.row_num = LINES - MISC_PAD - 2;
 
 	return 0;
 }
@@ -497,10 +506,16 @@ void tui_loop(void) {
 
 			case KEY_UP:
 				tui_info.highlight_line--;
+				if (tui_info.highlight_line < 0) {
+					tui_info.row_offset--;
+				}
 				break;
 
 			case KEY_DOWN:
 				tui_info.highlight_line++;
+				if (tui_info.highlight_line >= tui_info.row_num) {
+					tui_info.row_offset++;
+				}
 				break;
 		}
 
