@@ -20,15 +20,19 @@
 #define _GNU_SOURCE
 #include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <poll.h>
 #include <malloc.h>
+#include <errno.h>
 
 #include "../memstrack.h"
 #include "../tracing.h"
 
 #define PAGE_OWNER_FILE "/sys/kernel/debug/page_owner"
 #define PAGE_ALLOC_HEADER "Page allocated via order "
+#define PFN_HEADER "PFN "
 #define MAX_LINE 1024
 
 static char *page_owner_file;
@@ -39,23 +43,47 @@ static struct Tracenode* __process_stacktrace(
 	struct Tracenode *tp = NULL;
 	char *callsite;
 	int callsite_len;
+	unsigned long len;
 
 	if (!fgets(line, MAX_LINE, file)) {
 		log_error("Page owner file ended unexpectly before stacktrace.\n");
 		return NULL;
 	}
 
-	/* \n, or \n\r just in case */
-	if (strlen(line) <= 2)
+	len = strlen(line);
+	if (len == 0) {
+		log_error("Page owner stacktrace ended unexpectly.\n");
+		return NULL;
+	}
+
+	/* Empty line, end of a stacktrace */
+	if (line[0] == '\n' || line[0] == '\r')
 		return tn;
 
 	// Skip the leading space by + 1
-	callsite = strdup(line + 1);
-	callsite_len = strlen(callsite);
-	callsite[callsite_len - 1] = '\0';
+	if (line[0] != ' ') {
+		log_error("Page owner stacktrace malformed.\n");
+		return NULL;
+	}
+	line++;
+
+	callsite_len = strlen(line) - 1;
+	while (callsite_len > 0 && isspace(line[callsite_len]))
+		callsite_len--;
+
+	if (callsite_len < 1) {
+		log_error("Page owner stacktrace contains empty line.\n");
+		return NULL;
+	}
+	callsite = strndup(line, callsite_len);
 
 	// Process next traceline
 	tp = __process_stacktrace(tn, pe, line, file);
+	if (tp == NULL) {
+		free(callsite);
+		return NULL;
+	}
+
 	tp = get_or_new_child_tracenode(tp, callsite);
 	update_tracenode_record(tp, pe);
 
@@ -63,12 +91,21 @@ static struct Tracenode* __process_stacktrace(
 }
 
 static int page_owner_handle_header(struct PageEvent *event, char *line, FILE *file) {
-	char *page_arg;
-	int order, pfn;
+	char *arg, *end;
+	int pfn;
+	unsigned long len;
 
-	if (strncmp(line, PAGE_ALLOC_HEADER, sizeof(PAGE_ALLOC_HEADER) - 1) == 0) {
-		page_arg = line + sizeof(PAGE_ALLOC_HEADER) - 1;
-		sscanf(page_arg, "%d", &order);
+	len = strlen(line);
+	if (len > sizeof(PAGE_ALLOC_HEADER) - 1)
+		len = sizeof(PAGE_ALLOC_HEADER) - 1;
+
+	if (strncmp(line, PAGE_ALLOC_HEADER, len) == 0) {
+		arg = line + len;
+		strtol(arg, &end, 10);
+		if (end == arg || *end != ',') {
+			log_error("Failed to parse page order.");
+			return -1;
+		}
 	} else {
 		log_error("Failed to read page allocation info.");
 		return -1;
@@ -79,9 +116,17 @@ static int page_owner_handle_header(struct PageEvent *event, char *line, FILE *f
 		return -1;
 	}
 
-	if (strncmp(line, "PFN ", sizeof("PFN ") - 1) == 0) {
-		page_arg = line + sizeof("PFN ") - 1;
-		sscanf(page_arg, "%d", &pfn);
+	len = strlen(line);
+	if (len > sizeof(PFN_HEADER) - 1)
+		len = sizeof(PFN_HEADER) - 1;
+
+	if (strncmp(line, PFN_HEADER, len) == 0) {
+		arg = line + len;
+		pfn = strtol(arg, &end, 10);
+		if (end == arg || *end != ' ') {
+			log_error("Failed to parse page pfn.");
+			return -1;
+		}
 	} else {
 		log_error("Failed to read page pfn info.");
 		return -1;
@@ -123,7 +168,7 @@ int page_owner_handling_init() {
 
 	file = fopen(fpath, "r");
 	if (!file) {
-		log_error("Failed to open %s\n", fpath);
+		log_error("Failed to open %s with %s\n", fpath, strerror(errno));
 		return -1;
 	}
 
