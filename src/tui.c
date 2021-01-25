@@ -69,6 +69,7 @@ static struct {
 	int highlight_line;
 	int active_line_num;
 
+	bool paused;
 	bool console_too_small;
 
 	int line_len;
@@ -112,6 +113,9 @@ static bool is_tracenode_view_stall(struct TracenodeView* node) {
 }
 
 static void update_top_tracenodes(void) {
+	if (tui_info.paused)
+		return;
+
 	if (top_tracenodes) {
 		free(top_tracenodes);
 		top_tracenodes = NULL;
@@ -428,7 +432,7 @@ static void update_ui(WINDOW *trace_win) {
 		return;
 	}
 
-	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules\n");
+	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': pause UI\n");
 	mvprintw(1, 0, "Events captured: %lu\n", trace_count, tui_info.highlight_line, tui_info.row_num, tui_info.row_offset);
 	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
@@ -508,8 +512,13 @@ void tui_loop(void) {
 				break;
 
 			case ' ':
-				toggle_tracenode_view(tracenode_views + tui_info.highlight_line);
+				toggle_tracenode_view(tracenode_views + tui_info.highlight_line + tui_info.row_offset);
 				sync_tracenode_views();
+				break;
+
+			case 'p':
+			case 'P':
+				tui_info.paused = !tui_info.paused;
 				break;
 
 			case KEY_RIGHT:
