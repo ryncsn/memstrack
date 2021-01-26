@@ -143,7 +143,8 @@ match:
 	va_end (args);
 
 	/* Read a new line as this line is already parsed to avoid parsing it again */
-	fgets(buf, PROC_MAX_LINE, file);
+	if (!fgets(buf, PROC_MAX_LINE, file))
+		return -1;
 
 	return 0;
 }
@@ -151,7 +152,7 @@ match:
 int parse_zone_info(struct zone_info **zone)
 {
 	FILE *file;
-	char line[PROC_MAX_LINE], zone_name[ZONENAMELEN];
+	char line[PROC_MAX_LINE] = "", zone_name[ZONENAMELEN];
 	int node;
 
 	file = fopen(ZONEINFO, "r");
@@ -167,7 +168,7 @@ int parse_zone_info(struct zone_info **zone)
 		(*zone)->node = node;
 		strncpy((*zone)->name, zone_name, ZONENAMELEN);
 
-		log_debug("Trying to parse node %d zone %s\n", node, zone_name, (*zone)->start_pfn, (*zone)->spanned);
+		log_debug("Trying to parse node %d zone %s\n", node, zone_name);
 
 		if (
 			parse_keyword(1, file, line, "free", "Node", "free %lu", &(*zone)->free) ||

@@ -128,7 +128,10 @@ int perf_do_load_event_info(struct PerfEvent *event)
 	}
 
 	/* Parse in order name, ID, format */
-	fgets(fmt_buffer, 1024, fmt_file);
+	if (!fgets(fmt_buffer, 1024, fmt_file)) {
+		log_error("Failed to read perf format\n");
+		goto out;
+	}
 	val = strstr(fmt_buffer, "name: ") + 6;
 	if (val) {
 		if (strncmp(val, event->name, strlen(event->name))) {
@@ -137,11 +140,13 @@ int perf_do_load_event_info(struct PerfEvent *event)
 		}
 	} else {
 		log_error("Failed to verify event name of %s\n", event->name);
-		ret = 1;
 		goto out;
 	}
 
-	fgets(fmt_buffer, 1024, fmt_file);
+	if (!fgets(fmt_buffer, 1024, fmt_file)) {
+		log_error("Failed to read perf format\n");
+		goto out;
+	}
 	val = strstr(fmt_buffer, "ID:");
 	if (val) {
 		if (!sscanf(fmt_buffer + 3, "%d", &event->id)) {
@@ -154,7 +159,10 @@ int perf_do_load_event_info(struct PerfEvent *event)
 	}
 	log_debug("ID of %s:%s is %d\n", event->event_class, event->name, event->id);
 
-	fgets(fmt_buffer, 1024, fmt_file);
+	if (!fgets(fmt_buffer, 1024, fmt_file)) {
+		log_error("Failed to read perf format\n");
+		goto out;
+	}
 	if (strncmp(fmt_buffer, "format:", 7)) {
 		log_error("Failed to parse event format of %s\n", event->name);
 		goto out;

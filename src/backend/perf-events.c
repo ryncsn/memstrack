@@ -122,20 +122,6 @@ static struct Tracenode* __process_stacktrace(
 	return tp;
 }
 
-static void __process_common(
-		const unsigned char* header,
-		struct perf_sample_callchain **callchain, struct perf_sample_raw **raw) {
-	// struct perf_sample_basic *body = (struct perf_sample_basic*)header;
-
-	*callchain = (struct perf_sample_callchain*)header;
-	header += sizeof((*callchain)->nr) + sizeof((*callchain)->ips) * (*callchain)->nr;
-
-	*raw = (struct perf_sample_raw*)header;
-	//header += sizeof((*raw)->size) + (*raw)->size;
-
-	//return header;
-}
-
 static int perf_handle_mm_page_alloc(const unsigned char* header) {
 	struct Task *task;
 	struct PageEvent event;
@@ -315,7 +301,7 @@ int perf_init(int buf_size)
 		perf_event_table[i].event->buf_size = size;
 		aligned_buf_size += size;
 
-		log_debug("%s using %ld (%ld pages) of buffer per CPU.\n",
+		log_debug("%s using %u (%u pages) of buffer per CPU.\n",
 				perf_event_table[i].event->name,
 				perf_event_table[i].event->buf_size,
 				perf_event_table[i].event->buf_size / page_size);

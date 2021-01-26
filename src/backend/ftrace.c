@@ -156,7 +156,7 @@ int ftrace_handling_init() {
 //	if (m_page) {
 //		print_header += sprintf(print_header, "kmem:mm_page_alloc ");
 //	}
-	print_header += sprintf(print_header, "kmem:mm_page_alloc ");
+	sprintf(print_header, "kmem:mm_page_alloc ");
 	return ftrace_setup(&ftrace_file, setup_events);
 }
 

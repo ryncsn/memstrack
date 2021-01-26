@@ -140,7 +140,7 @@ static int page_owner_handle_header(struct PageEvent *event, char *line, FILE *f
 
 static int page_owner_process_all(FILE *file) {
 	int ret;
-	struct PageEvent pe;
+	struct PageEvent pe = {0};
 	struct Task *task;
 	char line[MAX_LINE];
 

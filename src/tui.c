@@ -206,10 +206,11 @@ static void sync_tracenode_views(void) {
 
 	recalc_tracenode_view_num();
 
-	if (tracenode_views)
-		tracenode_views = realloc(tracenode_views, sizeof(struct TracenodeView) * tracenode_view_num);
-	else
-		tracenode_views = calloc(tracenode_view_num, sizeof(struct TracenodeView));
+	tracenode_views = realloc(tracenode_views, sizeof(struct TracenodeView) * tracenode_view_num);
+	if (!tracenode_views) {
+		log_error("Out of memory\n");
+		m_exit(1);
+	}
 
 	for (int i = 0; i < top_tracenode_num; ++i) {
 		marker.rev_index = top_tracenode_num - i;
@@ -471,7 +472,7 @@ static void update_ui(void) {
 	}
 
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': pause UI\n");
-	mvprintw(1, 0, "Events captured: %lu\n", trace_count, tui_info.highlight_line, tui_info.line_num, tui_info.line_offset);
+	mvprintw(1, 0, "Events captured: %lu\n", trace_count);
 	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
 			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);

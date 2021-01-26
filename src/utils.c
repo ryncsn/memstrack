@@ -61,6 +61,7 @@ static struct TreeNode* remove_tree_node(struct TreeNode **root) {
 	}
 }
 
+/*
 static int get_tree_depth(struct TreeNode *root) {
 	int max_depth = 1, depth = 1;
 	if (root->left) {
@@ -77,6 +78,7 @@ static int get_tree_depth(struct TreeNode *root) {
 	}
 	return max_depth;
 }
+*/
 
 struct TreeNode* get_tree_node(
 		struct TreeNode **root, void *key,
