@@ -63,9 +63,9 @@ static WINDOW *trace_win;
 
 #define LINE_BUF_LEN 4096
 static struct {
-	int row_offset;
+	int line_offset;
 	int col_offset;
-	int row_num;
+	int line_num;
 	int highlight_line;
 	int active_line_num;
 
@@ -306,7 +306,6 @@ static int line_buf_puts(char *s) {
 
 static void print_tracenode_view(
 		struct TracenodeView *view,
-		WINDOW *tracewin,
 		int row)
 {
 	int title_offset;
@@ -374,24 +373,24 @@ static void print_tracenode_view(
 	tui_info.line_buf[tui_info.line_len] = '\0';
 
 	if (row == tui_info.highlight_line) {
-		wattron(tracewin, A_REVERSE);
-		mvwprintw(tracewin, row + 1, 1,  "%s", tui_info.line_buf);
-		wattroff(tracewin, A_REVERSE);
+		wattron(trace_win, A_REVERSE);
+		mvwprintw(trace_win, row + 1, 1,  "%s", tui_info.line_buf);
+		wattroff(trace_win, A_REVERSE);
 	} else {
-		mvwprintw(tracewin, row + 1, 1,  "%s", tui_info.line_buf);
+		mvwprintw(trace_win, row + 1, 1,  "%s", tui_info.line_buf);
 	}
 }
 
-static void update_tracewin(WINDOW *tracewin) {
+static void update_tracewin(void) {
 	/* Clean up the window */
 	werase(trace_win);
 	box(trace_win, 0, 0);
 
 	/* Window title bar */
 	if (ui_type == UI_TYPE_TASK) {
-		mvwprintw(tracewin, 0, 1, "   PID   |    Pages   |    Peak    |   Process Command Line\n");
+		mvwprintw(trace_win, 0, 1, "   PID   |    Pages   |    Peak    |   Process Command Line\n");
 	} else {
-		mvwprintw(tracewin, 0, 1, "         |    Pages   |    Peak    |   Module Name   \n");
+		mvwprintw(trace_win, 0, 1, "         |    Pages   |    Peak    |   Module Name   \n");
 	}
 
 	if (tui_info.highlight_line >= tui_info.active_line_num)
@@ -403,29 +402,68 @@ static void update_tracewin(WINDOW *tracewin) {
 	if (tui_info.highlight_line < 0)
 		tui_info.highlight_line = 0;
 
-	if (tui_info.row_offset > tracenode_view_num - tui_info.row_num)
-		tui_info.row_offset = tracenode_view_num - tui_info.row_num;
+	if (tui_info.line_offset > tracenode_view_num - tui_info.line_num)
+		tui_info.line_offset = tracenode_view_num - tui_info.line_num;
 
-	if (tui_info.row_offset < 0)
-		tui_info.row_offset = 0;
+	if (tui_info.line_offset < 0)
+		tui_info.line_offset = 0;
 
 	if (tui_info.col_offset < 0)
 		tui_info.col_offset = 0;
 
 	tui_info.active_line_num = 0;
-	for (int i = 0, j; i < tui_info.row_num; ++i) {
-		j = tui_info.row_offset + i;
+	for (int i = 0, j; i < tui_info.line_num; ++i) {
+		j = tui_info.line_offset + i;
 		if (j >= tracenode_view_num)
 			break;
 
 		tui_info.active_line_num++;
-		print_tracenode_view(tracenode_views + j, trace_win, i);
+		print_tracenode_view(tracenode_views + j, i);
 	}
 
 	wrefresh(trace_win);
 }
 
-static void update_ui(WINDOW *trace_win) {
+static void ui_update_size(void) {
+	int win_startx, win_starty, win_width, win_height;
+
+	win_height = LINES - MISC_PAD;
+	win_width = COLS;
+	win_starty = MISC_PAD;
+	win_startx = 0;
+
+	if (win_width < 16 || win_height < 8) {
+		tui_info.console_too_small = 1;
+		return;
+	} else {
+		tui_info.console_too_small = 0;
+	}
+
+	if (tui_info.line_num != win_height - 2 ||
+	    tui_info.line_len != win_width - 2)
+	{
+		if (trace_win)
+			delwin(trace_win);
+		trace_win = NULL;
+
+		if (tui_info.line_buf)
+			free(tui_info.line_buf);
+		tui_info.line_buf = NULL;
+
+		tui_info.line_len = COLS - 2;
+		tui_info.line_num = LINES - MISC_PAD - 2;
+	}
+
+	if (!trace_win)
+		trace_win = newwin(win_height, win_width, win_starty, win_startx);
+
+	if (!tui_info.line_buf)
+		tui_info.line_buf = malloc(tui_info.line_len + 1);
+}
+
+static void update_ui(void) {
+	ui_update_size();
+
 	if (tui_info.console_too_small) {
 		mvprintw(0, 0, "Console is too small\n");
 		refresh();
@@ -433,40 +471,13 @@ static void update_ui(WINDOW *trace_win) {
 	}
 
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': pause UI\n");
-	mvprintw(1, 0, "Events captured: %lu\n", trace_count, tui_info.highlight_line, tui_info.row_num, tui_info.row_offset);
+	mvprintw(1, 0, "Events captured: %lu\n", trace_count, tui_info.highlight_line, tui_info.line_num, tui_info.line_offset);
 	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
 			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);
 	refresh();
 
-	update_tracewin(trace_win);
-}
-
-int tui_update_size(void) {
-	int win_startx, win_starty, win_width, win_height;
-
-	if (COLS < 16 || LINES < 8) {
-		tui_info.console_too_small = 1;
-		return -1;
-	} else {
-		tui_info.console_too_small = 0;
-	}
-
-	win_height = LINES - MISC_PAD; // 4 line above for info
-	win_width = COLS;
-	win_starty = MISC_PAD;
-	win_startx = 0;
-
-	if (trace_win)
-		delwin(trace_win);
-
-	trace_win = newwin(win_height, win_width, win_starty, win_startx);
-
-	tui_info.line_len = COLS - 2;
-	tui_info.line_buf = malloc(COLS - 2 + 1);
-	tui_info.row_num = LINES - MISC_PAD - 2;
-
-	return 0;
+	update_tracewin();
 }
 
 void tui_init(void) {
@@ -480,8 +491,6 @@ void tui_init(void) {
 	curs_set(0);
 	noecho();
 	raw();
-
-	tui_update_size();
 }
 
 void tui_loop(void) {
@@ -512,7 +521,7 @@ void tui_loop(void) {
 				break;
 
 			case ' ':
-				toggle_tracenode_view(tracenode_views + tui_info.highlight_line + tui_info.row_offset);
+				toggle_tracenode_view(tracenode_views + tui_info.highlight_line + tui_info.line_offset);
 				sync_tracenode_views();
 				break;
 
@@ -532,19 +541,19 @@ void tui_loop(void) {
 			case KEY_UP:
 				tui_info.highlight_line--;
 				if (tui_info.highlight_line < 0) {
-					tui_info.row_offset--;
+					tui_info.line_offset--;
 				}
 				break;
 
 			case KEY_DOWN:
 				tui_info.highlight_line++;
-				if (tui_info.highlight_line >= tui_info.row_num) {
-					tui_info.row_offset++;
+				if (tui_info.highlight_line >= tui_info.line_num) {
+					tui_info.line_offset++;
 				}
 				break;
 		}
 
-		update_ui(trace_win);
+		update_ui();
 	}
 
 	if (ui_fds[1].revents & POLLIN) {
@@ -553,7 +562,7 @@ void tui_loop(void) {
 		if (ret) {
 			update_top_tracenodes();
 			sync_tracenode_views();
-			update_ui(trace_win);
+			update_ui();
 		}
 	}
 }

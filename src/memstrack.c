@@ -175,14 +175,13 @@ static void init(void) {
 static void loop(void) {
 	switch (poll(m_pollfds, m_pollfd_num, 250)) {
 		// Resizing the terminal causes poll() to return -1
-		case -1:
+		// case -1:
 		default:
 			if (m_backend == BACKEND_PERF) {
 				perf_handling_process();
 			} else if (m_backend == BACKEND_FTRACE) {
 				ftrace_handling_process();
 			}
-
 			if (!m_notui)
 				tui_loop();
 	}
