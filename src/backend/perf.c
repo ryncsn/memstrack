@@ -53,9 +53,8 @@ int perf_handling_init() {
 		struct PerfEventRing *rings = perf_event_rings + (i * cpu_num);
 		entry = perf_event_table + i;
 
-		if (!entry->is_enabled()) {
+		if (!entry->is_enabled() || !entry->event->valid)
 			continue;
-		}
 
 		for (int cpu = 0; cpu < cpu_num; cpu++) {
 			rings[cpu].event = entry->event;

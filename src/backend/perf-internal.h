@@ -18,6 +18,7 @@
  */
 
 #include <linux/perf_event.h>
+#include <stdbool.h>
 
 struct PerfEventField {
 	char *name;
@@ -25,14 +26,17 @@ struct PerfEventField {
 
 	short size;
 	short offset;
-	short is_signed;
-	short checked;
+	bool is_signed;
+	bool checked;
 };
 
 struct PerfEvent {
 	char *event_class;
 	char *name;
+	char *filter;
+
 	int id;
+	bool valid;
 
 	unsigned long sample_type;
 	unsigned int buf_factor;

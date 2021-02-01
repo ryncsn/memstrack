@@ -28,6 +28,7 @@
 #include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #include <linux/perf_event.h>
+#include <sys/syscall.h>
 
 #include "perf-internal.h"
 #include "perf-events-define.h"
@@ -39,8 +40,12 @@
 #define PERF_EVENTS_PATH_ALT "/sys/kernel/tracing/events"
 #define WAKEUP_WATERMARK 1024
 
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define SYS_CALL_INIT_MODULE_FILTER "id == " STR(SYS_init_module)
+
 DefineEvent(
-	kmem, mm_page_alloc, 32,
+	kmem, mm_page_alloc, NULL, 32,
 	PERF_SAMPLE_RAW | PERF_SAMPLE_CALLCHAIN,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -51,7 +56,7 @@ DefineEvent(
 );
 
 DefineEvent(
-	kmem, mm_page_free, 32,
+	kmem, mm_page_free, NULL, 32,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	EventField(unsigned int, order),
@@ -59,26 +64,42 @@ DefineEvent(
 );
 
 DefineEvent(
-	module, module_load, 1,
+	module, module_load, NULL, 1,
 	PERF_SAMPLE_RAW,
 	IncludeCommonEventFields(),
 	// EventField(int, taints),
 	EventField(__data_loc char[], name, 4, 1));
 
+/*
+ * It's hard to get module name from raw syscall trace, so don't use these yet
+ */
+//DefineEvent(
+//	syscalls, sys_enter_init_module, NULL, 1,
+//	0,
+//	IncludeCommonEventFields());
+//	// EventField(int, __syscall_nr);
+//
+//DefineEvent(
+//	raw_syscalls, sys_init, SYS_CALL_INIT_MODULE_FILTER, 1,
+//	0,
+//	IncludeCommonEventFields());
+//	// EventField(int, __syscall_nr);
+
+
 DefineEvent(
-	syscalls, sys_enter_init_module, 1,
+	syscalls, sys_exit_init_module, NULL, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	syscalls, sys_exit_init_module, 1,
+	raw_syscalls, sys_exit, SYS_CALL_INIT_MODULE_FILTER, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
 
 DefineEvent(
-	sched, sched_process_exec, 1,
+	sched, sched_process_exec, NULL, 1,
 	0,
 	IncludeCommonEventFields());
 	// EventField(int, __syscall_nr);
@@ -248,6 +269,7 @@ const struct perf_event_table_entry perf_event_table[] = {
 	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable },
 //	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
 	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
+	{ &get_perf_event(sys_exit),			perf_handle_sys_exit_init_module,	always_enable },
 	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,	always_enable },
 };
 
@@ -316,6 +338,7 @@ int perf_init(int buf_size)
 
 int perf_ring_setup(struct PerfEventRing *ring) {
 	struct perf_event_attr attr;
+	int ret = 0;
 	int perf_fd = 0;
 
 	memset(&attr, 0, sizeof(struct perf_event_attr));
@@ -364,7 +387,12 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 int perf_ring_start_sampling(struct PerfEventRing *ring) {
 	int ret;
 	char buffer[1024];
-	sprintf(buffer, "common_pid!=%d", getpid());
+
+	if (ring->event->filter) {
+		snprintf(buffer, 1024, "common_pid!=%d && %s", getpid(), ring->event->filter);
+	} else {
+		snprintf(buffer, 1024,"common_pid!=%d", getpid());
+	}
 
 	log_debug("Starting sampling on perf fd %d\n", ring->fd);
 	ret = ioctl(ring->fd, PERF_EVENT_IOC_RESET, 0);

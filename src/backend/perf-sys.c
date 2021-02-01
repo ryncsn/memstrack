@@ -215,6 +215,8 @@ int perf_do_load_event_info(struct PerfEvent *event)
 					field->name, field->offset, field->size, field->is_signed);
 		}
 	}
+
+	event->valid = 1;
 	ret = 0;
 
 out:

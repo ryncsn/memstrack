@@ -54,10 +54,12 @@
 #define _DoDefineTable(name, ...)\
 	struct PerfEventField name##_info;
 
-#define DefineEvent(event_class, name, buf_shift_min, sample_type, ...)\
+#define DefineEvent(event_class, name, filter, buf_shift_min, sample_type, ...)\
 	struct PerfEvent perf_event_##name = {\
 		#event_class,\
 		#name,\
+		filter,\
+		0,\
 		0,\
 		sample_type,\
 		buf_shift_min,\
