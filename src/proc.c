@@ -143,8 +143,7 @@ match:
 	va_end (args);
 
 	/* Read a new line as this line is already parsed to avoid parsing it again */
-	if (!fgets(buf, PROC_MAX_LINE, file))
-		return -1;
+	fgets(buf, PROC_MAX_LINE, file);
 
 	return 0;
 }
