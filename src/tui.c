@@ -207,7 +207,7 @@ static void sync_tracenode_views(void) {
 	recalc_tracenode_view_num();
 
 	tracenode_views = realloc(tracenode_views, sizeof(struct TracenodeView) * tracenode_view_num);
-	if (!tracenode_views) {
+	if (!tracenode_views && tracenode_view_num) {
 		log_error("Out of memory\n");
 		m_exit(1);
 	}
