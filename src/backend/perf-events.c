@@ -270,27 +270,28 @@ const struct perf_event_table_entry perf_event_table[] = {
 //	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
 	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
 	{ &get_perf_event(sys_exit),			perf_handle_sys_exit_init_module,	always_enable },
-	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,	always_enable },
+	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,		always_enable },
 };
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);
 
-int perf_init(int buf_size)
+int perf_events_init(int buf_size)
 {
 	int ret;
 	int perf_event_enabled_num = 0;
-	int total_factor = 0;
+	int buf_total_factor = 0;
 	size_t buf_per_factor, aligned_buf_size = 0;
 
 	for (int i = 0; i < perf_event_entry_number; ++i) {
 		ret = perf_do_load_event_info(perf_event_table[i].event);
 		if (ret)
-			return ret;
+			log_error("Perf event %s is not supported on this kernel, tracing could be inaccurate.\n", perf_event_table[i].event->name);
 
-		if (perf_event_table[i].is_enabled()) {
-			perf_event_enabled_num ++;
-			total_factor += perf_event_table[i].event->buf_factor;
-		}
+		if (!perf_event_table[i].is_enabled() || !perf_event_table[i].event->valid)
+			continue;
+
+		perf_event_enabled_num ++;
+		buf_total_factor += perf_event_table[i].event->buf_factor;
 	}
 
 	/* Check event requirements */
@@ -299,11 +300,11 @@ int perf_init(int buf_size)
 		return -1;
 	}
 
-	buf_size = buf_size / total_factor / page_size;
+	buf_size = buf_size / buf_total_factor / page_size;
 	if (buf_size == 0)
 		buf_size = 1;
 	buf_per_factor = buf_size * page_size;
-	log_debug("Using buffer size %ldKB\n", buf_per_factor * total_factor / 1024);
+	log_debug("Using buffer size %ldKB\n", buf_per_factor * buf_total_factor / 1024);
 
 	for (int i = 0; i < perf_event_entry_number; ++i) {
 		size_t size = page_size, max_size = perf_event_table[i].event->buf_factor * buf_per_factor;
@@ -338,7 +339,6 @@ int perf_init(int buf_size)
 
 int perf_ring_setup(struct PerfEventRing *ring) {
 	struct perf_event_attr attr;
-	int ret = 0;
 	int perf_fd = 0;
 
 	memset(&attr, 0, sizeof(struct perf_event_attr));
