@@ -514,6 +514,7 @@ void tui_loop(void) {
 				if (ui_type >= UI_TYPE_MAX)
 					ui_type = 0;
 				update_top_tracenodes();
+				sync_tracenode_views();
 				break;
 
 			case 'r':
