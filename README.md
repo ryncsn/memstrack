@@ -2,19 +2,26 @@
 
 [![Build Status](https://travis-ci.org/ryncsn/memstrack.svg?branch=master)](https://travis-ci.org/ryncsn/memstrack) [![codecov](https://codecov.io/gh/ryncsn/memstrack/branch/master/graph/badge.svg)](https://codecov.io/gh/ryncsn/memstrack)
 
-A memory allocation trace, like a hot spot analyzer for memory allocation, it can help analyze overall memory usage, peak memory usage, kernel module memory usage. Userspace memory trace is planned and not yet implemented.
+A runtime memory allocation tracer, like a hot spot analyzer for memory allocation, can help analyze overall memory usage, peak memory usage, kernel module memory usage, all combined with stacktrace. Userspace memory trace is planned and not yet implemented.
+
+This tool works by tracing all page-level memory allocation events in kernel (currently supports using perf or ftrace), and actively integrate the events into a stack trace tree. It can also work with kernel's page owner log file and use as a memory usage viewer.
 
 # Usage
-It has a TUI showing current memory allocation status:
+To analyze the memory usage of a certain program/module/code, you have to start memstrack before start/load the program, since memstrack can only track the allocation events at runtime.
+
+## TUI
+By default, memstrack will show a TUI, showing all memory allocation happened since memstrack is started:
 ![alt text](https://ryncsn.github.io/latest-memstrack-screenshot.png "Screenshot of TUI showing tasks")
 ![alt text](https://ryncsn.github.io/latest-memstrack-screenshot-2.png "Screenshot of TUI showing modules")
 
-And can generate reports of memory allocation and usage of a long period.
+## Usage Report
+memstrack can generate a report of memory allocation info during a long period.
 
-A example report, which shows the memory usage summary of a typical kdump run on Fedora 32 in a KVM VM:
+An example report, which shows the memory usage summary of a typical kdump run on Fedora 32 in a KVM VM:
 ```sh
 # Following report is genereted with
 # `memstrack --report module_summary,module_top --notui --throttle 80`
+# memstrack will generate the report and exit upon SIGTERM/SIGINT
 
 ======== Report format module_summary: ========
 Module squashfs using 26.8MB (6868 pages), peak allocation 35.1MB (8976 pages)
