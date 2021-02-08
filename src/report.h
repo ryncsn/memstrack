@@ -37,6 +37,7 @@ struct reporter_table_t {
 
 extern struct reporter_table_t reporter_table[];
 extern int report_table_size;
+extern int report_default_throttle;
 
 int check_report_fmt(const char *fmt);
 void do_report(const char* fmt);

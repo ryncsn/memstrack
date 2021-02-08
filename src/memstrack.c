@@ -196,6 +196,10 @@ static void display_usage() {
 	log_info("    			Choose a backend for memory allocation tracing. Defaults to perf.\n");
 	log_info("    			ftrace: poor performance but should always work.\n");
 	log_info("    			perf: binary perf, may require CONFIG_FRAME_POINTER enabled for Kernel version <= 5.1.\n");
+	log_info("    --throttle <PERCENTAGE>\n");
+	log_info("    			A global default throttle. When set, only callsites consuming [PERCENTAGE] will be shown in report.\n");
+	log_info("    			Could be overridden by per reporter param.\n");
+
 	log_info("    --report {<type>[[:params]...],...}\n");
 	log_info("    			Choose final report type, if multiple types are given, they are printed in given order.\n");
 	log_info("    			Params could be:\n");
@@ -237,12 +241,12 @@ int main(int argc, char **argv) {
 		{"debug",		no_argument,		&m_debug,	1},
 		{"output",		required_argument,	0,		'o'},
 		{"backend",		required_argument,	0,		'b'},
+		{"throttle",            required_argument,      0,              't'},
 		{"report",		required_argument,	0,		'r'},
 		{"buf-size",		required_argument,	0,		's'},
 		{"pageowner-file",	required_argument,	0,		'p'},
 		{"help",		no_argument,		0,		'?'},
 		// {"human-readable",	no_argument,		0,		'h'},
-		// {"trace-base",	required_argument,	0,		't'},
 		{0, 0, 0, 0}
 	};
 
@@ -273,6 +277,13 @@ int main(int argc, char **argv) {
 					exit(1);
 				}
 				perf_buf_size_per_cpu = m_buf_size << 20;
+				break;
+			case 't':
+				report_default_throttle = atoi(optarg);
+				if (report_default_throttle < 0 || report_default_throttle > 100) {
+					log_error("--throttle expects an integer between 0 - 100.\n");
+					exit(1);
+				}
 				break;
 			case 'p':
 				page_owner_set_filepath(strdup(optarg));

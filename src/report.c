@@ -27,6 +27,8 @@
 #include "report.h"
 #include "proc.h"
 
+int report_default_throttle;
+
 static void report_module_summary(struct reporter_fmt* fmt) {
 	struct Module **modules;
 	modules = collect_modules_sorted(0);
@@ -151,6 +153,7 @@ static int parse_report_fmt_tok(char *fmt_tok,
 	report_type = fmt_tok;
 	strtok_r(report_type, ":", &tmp);
 	report_arg = strtok_r(NULL, ":", &tmp);
+	parsed_fmt.throttle = report_default_throttle;
 
 	for (int i = 0;; ++i) {
 		if (!strcmp(reporter_table[i].name, report_type)) {
