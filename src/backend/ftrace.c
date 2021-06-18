@@ -239,7 +239,7 @@ static void do_ftrace_process() {
 			tn = __process_stacktrace();
 
 			// New leaf
-			if (!tn->record)
+			if (tn && !tn->record)
 				update_tracenode_record(tn, &pevent);
 
 			task = NULL;

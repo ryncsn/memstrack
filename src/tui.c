@@ -292,7 +292,7 @@ static int line_buf_puts(char *s) {
 	int len = strlen(s);
 	int left = (tui_info.line_len - (tui_info.line_cur - tui_info.line_buf + 1));
 
-	if (left < 0)
+	if (left <= 0)
 		return -1;
 
 	if (left < len)

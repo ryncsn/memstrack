@@ -444,11 +444,17 @@ void update_record(struct PageEvent *pevent) {
 	do_update_record(NULL, pevent);
 }
 
-void update_tracenode_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
+static void alloc_tracenode_record(struct Tracenode *tracenode) {
+	tracenode->record = calloc(1, sizeof(struct Record));
 	if (!tracenode->record) {
-		tracenode->record = calloc(1, sizeof(struct Record));
+		log_error("Failed to alloc memory for tracenode record.\n");
+		m_exit(1);
 	}
+}
 
+void update_tracenode_record(struct Tracenode *tracenode, struct PageEvent *pevent) {
+	if (!tracenode->record)
+		alloc_tracenode_record(tracenode);
 	do_update_record(tracenode, pevent);
 }
 
@@ -496,6 +502,11 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 
 	if (tracenode == NULL) {
 		tracenode = (struct Tracenode*)calloc(1, sizeof(struct Tracenode));
+		if (!tracenode) {
+			log_error("Failed to alloc memory.\n");
+			m_exit(1);
+		}
+
 		tracenode->key = key;
 		tracenode->parent = root;
 
@@ -510,8 +521,12 @@ struct Tracenode* get_or_new_child_tracenode(struct Tracenode *root, void *key){
 
 static struct Task* new_task(long pid) {
 	struct Task *task = (struct Task*)calloc(1, sizeof(struct Task));
-	task->pid = pid;
+	if (!task) {
+		log_error("Failed to alloc memory.\n");
+		m_exit(1);
+	}
 
+	task->pid = pid;
 	insert_hash_node(&active_task_map, &task->node, &pid);
 
 	return task;
@@ -669,6 +684,10 @@ void load_kallsyms() {
 	fclose(proc_kallsyms);
 
 	symbol_table = malloc(sizeof(struct Symbol) * symbol_table_len);
+	if (!symbol_table) {
+		log_error("Failed to alloc memory.\n");
+		m_exit(1);
+	}
 
 	for (int i = 0; i < symbol_table_len; ++i) {
 		symbol_table[i].addr = symbol_buf_head->symbol.addr;
@@ -732,8 +751,7 @@ static void do_populate_tracenode_iter(struct Tracenode* tracenode, void *blob) 
 	struct Record *parent_record = (struct Record*)blob;
 
 	if (tracenode->record == NULL) {
-		tracenode->record = calloc(1, sizeof(struct Record));
-
+		alloc_tracenode_record(tracenode);
 		if (tracenode->children)
 			for_each_tracenode(tracenode->children, do_populate_tracenode_iter, tracenode->record);
 	}
@@ -757,7 +775,7 @@ static void do_populate_tracenode_shallow_iter(struct Tracenode* tracenode, void
 
 void populate_tracenode(struct Tracenode* tracenode) {
 	if (tracenode->record == NULL) {
-		tracenode->record = calloc(1, sizeof(struct Record));
+		alloc_tracenode_record(tracenode);
 	} else {
 		memset(tracenode->record, 0, sizeof(struct Record));
 	}
@@ -768,7 +786,7 @@ void populate_tracenode(struct Tracenode* tracenode) {
 
 void populate_tracenode_shallow(struct Tracenode* tracenode) {
 	if (tracenode->record == NULL) {
-		tracenode->record = calloc(1, sizeof(struct Record));
+		alloc_tracenode_record(tracenode);
 	} else {
 		return;
 	}
@@ -861,21 +879,19 @@ struct Tracenode **collect_tracenodes_sorted(struct Tracenode *root, int *count,
 	struct Tracenode **nodes, **tail;
 
 	*count = get_tracenode_num(root);
-	tail = nodes = calloc(*count * sizeof(struct Tracenode*), 1);
+	tail = nodes = malloc(*count * sizeof(struct Tracenode*));
+	if (!nodes) {
+		log_error("Failed to alloc memory.\n");
+		m_exit(1);
+	}
 	for_each_tracenode(root, tracenode_iter_collect, &tail);
 
 	for (int i = 0; i < *count; ++i) {
-		if (!nodes[i]) {
-			*count = i;
-			break;
-		}
-
 		if (shallow)
 			populate_tracenode_shallow(nodes[i]);
 		else
 			populate_tracenode(nodes[i]);
 	}
-
 	qsort((void*)nodes, *count, sizeof(struct TreeNode*), comp_tracenode_mem);
 
 	return nodes;
@@ -903,6 +919,11 @@ struct Task **collect_tasks_sorted(int shallow, int *count) {
 	int i = 0;
 
 	tasks = malloc(active_task_map.size * sizeof(struct Task*));
+	if (!tasks) {
+		log_error("Failed to alloc memory.\n");
+		m_exit(1);
+	}
+
 	for_each_hnode(&active_task_map, hnode) {
 		tasks[i] = container_of(hnode, struct Task, node);
 
@@ -913,7 +934,6 @@ struct Task **collect_tasks_sorted(int shallow, int *count) {
 
 		i++;
 	}
-
 	qsort((void*)tasks, active_task_map.size, sizeof(struct Task*), comp_task_mem);
 
 	*count = active_task_map.size;
@@ -1058,9 +1078,13 @@ struct Module *get_or_new_module(char *name)
 	hnode = get_hash_node(&module_map, name);
 	if (!hnode) {
 		module = calloc(1, sizeof(struct Module));
+		if (!module) {
+			log_error("Failed to alloc memory.\n");
+			m_exit(1);
+		}
 		module->name = strdup(name);
-		module->tracenode.record = calloc(1, sizeof(struct Record));
-		insert_hash_node(&module_map, &module->node, name);
+		alloc_tracenode_record(&module->tracenode);
+		insert_hash_node(&module_map, &module->node, module->name);
 	} else {
 		module = container_of(hnode, struct Module, node);
 	}
@@ -1095,7 +1119,7 @@ static void do_gather_tracenodes_by_module(struct Tracenode *node, void *blob)
 		struct Tracenode *leaf = merge_into_module(node, module);
 		if (node->record) {
 			if (!leaf->record)
-				leaf->record = calloc(1, sizeof(struct Record));
+				alloc_tracenode_record(leaf);
 			leaf->record->pages_alloc += node->record->pages_alloc;
 			leaf->record->pages_alloc_peak += node->record->pages_alloc_peak;
 		} else {
@@ -1141,6 +1165,11 @@ struct Module **collect_modules_sorted(int shallow) {
 	}
 
 	modules = malloc(module_map.size * sizeof(struct Module*));
+	if (!modules) {
+		log_error("Failed to alloc memory.\n");
+		m_exit(1);
+	}
+
 	for_each_hnode(&module_map, hnode) {
 		modules[i] = container_of(hnode, struct Module, node);
 		if (shallow)
@@ -1149,7 +1178,6 @@ struct Module **collect_modules_sorted(int shallow) {
 			populate_tracenode(&modules[i]->tracenode);
 		i++;
 	}
-
 	qsort((void*)modules, module_map.size, sizeof(struct Modules*), comp_module_mem);
 
 	return modules;

@@ -164,6 +164,10 @@ int parse_zone_info(struct zone_info **zone)
 			break;
 
 		*zone = calloc(sizeof(struct zone_info), 1);
+		if (!zone) {
+			log_error("Failed to alloc memory.\n");
+			m_exit(1);
+		}
 		(*zone)->node = node;
 		strncpy((*zone)->name, zone_name, ZONENAMELEN);
 

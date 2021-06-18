@@ -94,13 +94,12 @@ static void do_exit() {
 }
 
 void m_exit(int ret) {
-	do_exit();
+	m_loop = 0;
 	exit(ret);
 }
 
 static void on_signal(int signal) {
-	log_debug("Exiting on signal %d\n", signal);
-	m_exit(0);
+	m_loop = 0;
 }
 
 static void tune_glibc() {
