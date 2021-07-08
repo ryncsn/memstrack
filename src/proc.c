@@ -164,7 +164,7 @@ int parse_zone_info(struct zone_info **zone)
 			break;
 
 		*zone = calloc(sizeof(struct zone_info), 1);
-		if (!zone) {
+		if (!*zone) {
 			log_error("Failed to alloc memory.\n");
 			m_exit(1);
 		}
