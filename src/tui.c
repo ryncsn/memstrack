@@ -32,7 +32,7 @@
 #include "memstrack.h"
 #include "tracing.h"
 
-#define MISC_PAD 3
+#define MISC_PAD 2
 #define NON_LAST_CHILD_INDENT '|'
 #define NON_LAST_CHILD_PREFIX '+'
 #define NON_LAST_CHILD_PREFIX_EXT '-'
@@ -472,8 +472,7 @@ static void update_ui(void) {
 	}
 
 	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': pause UI\n");
-	mvprintw(1, 0, "Events captured: %lu\n", trace_count);
-	mvprintw(2, 0, "Pages being tracked: %lu (%luMB)\n",
+	mvprintw(1, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
 			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);
 	refresh();

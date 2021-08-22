@@ -30,7 +30,6 @@ typedef void* trace_addr_t;
 
 extern struct HashMap module_map;
 
-extern unsigned long trace_count;
 extern unsigned long page_alloc_counter, page_free_counter;
 
 struct Record {

@@ -34,7 +34,6 @@
 #define PID_LEN_MAX 6
 
 unsigned int page_size;
-unsigned long trace_count;
 unsigned long page_alloc_counter, page_free_counter;
 
 static unsigned long max_pfn, start_pfn;

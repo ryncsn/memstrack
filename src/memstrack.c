@@ -341,7 +341,6 @@ int main(int argc, char **argv) {
 		perf_handling_start();
 
 	while (m_loop) {
-		trace_count ++;
 		loop();
 	}
 
