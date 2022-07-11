@@ -37,6 +37,23 @@
 
 static char *page_owner_file;
 
+static char *memcg_info[] = {
+	"Slab cache page",
+	"Charged ",
+};
+
+static int is_memcg_info(char *str)
+{
+	for (int i = 0;
+	     i < sizeof(memcg_info) / sizeof(__typeof__(memcg_info[0]));
+	     i++) {
+		if (!strncmp(str, memcg_info[i], strlen(memcg_info[i]))) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static struct Tracenode* __process_stacktrace(
 		struct Tracenode *tn, struct PageEvent *pe, char *line, FILE *file)
 {
@@ -45,6 +62,7 @@ static struct Tracenode* __process_stacktrace(
 	int callsite_len;
 	unsigned long len;
 
+retry:
 	if (!fgets(line, MAX_LINE, file)) {
 		log_error("Page owner file ended unexpectly before stacktrace.\n");
 		return NULL;
@@ -55,6 +73,9 @@ static struct Tracenode* __process_stacktrace(
 		log_error("Page owner stacktrace ended unexpectly.\n");
 		return NULL;
 	}
+
+	if (is_memcg_info(line))
+		goto retry;
 
 	/* Empty line, end of a stacktrace */
 	if (line[0] == '\n' || line[0] == '\r')
