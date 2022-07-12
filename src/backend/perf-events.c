@@ -156,7 +156,7 @@ static int perf_handle_mm_page_alloc(const unsigned char* header) {
 			sizeof(callchain->ips) * callchain->nr);
 
 	unsigned long pfn = read_data_from_perf_raw(mm_page_alloc, pfn, unsigned long, raw);
-	unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned long, raw);
+	unsigned int order = read_data_from_perf_raw(mm_page_alloc, order, unsigned int, raw);
 	int pid = read_data_from_perf_raw(mm_page_alloc, common_pid, int, raw);
 
 	// TODO: pfn == -1?
