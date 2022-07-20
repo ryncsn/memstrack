@@ -88,6 +88,38 @@ struct Symbol {
 static struct Symbol *symbol_table;
 int symbol_table_len;
 
+static struct Symbol* ksymname_to_symbol(const char *name) {
+	int left = 0, right = symbol_table_len, mid;
+	char *tmp = NULL;
+
+	if (strstr(name, "+")) {
+		tmp = strdup(name);
+		*strstr(tmp, "+") = '\0';
+	}
+
+	do {
+		mid = (left + right) / 2;
+		if (mid == left || mid == right) {
+			mid = left;
+			break;
+		}
+
+		int cmp = strcmp(symbol_table[mid].sym_name, name);
+		if (cmp > 0) {
+			right = mid;
+		} else if (cmp < 0) {
+			left = mid;
+		} else {
+			break;
+		}
+	} while (1);
+
+	if (tmp)
+		free(tmp);
+
+	return symbol_table + mid;
+}
+
 static struct Symbol* kaddr_to_symbol(trace_addr_t addr) {
 	int left = 0, right = symbol_table_len, mid;
 
@@ -108,6 +140,22 @@ static struct Symbol* kaddr_to_symbol(trace_addr_t addr) {
 	} while (1);
 
 	return symbol_table + mid;
+}
+
+static char* symbol_to_module(const char *name) {
+	static char *buffer;
+
+	struct Symbol *sym = ksymname_to_symbol(name);
+
+	if (buffer) {
+		free(buffer);
+		buffer = NULL;
+	}
+
+	if (sym && sym->module_name)
+		buffer = strdup(sym->module_name);
+
+	return buffer;
 }
 
 static char* kaddr_to_module(trace_addr_t addr) {
@@ -153,13 +201,16 @@ static char* kaddr_to_sym(trace_addr_t addr) {
 	return buffer;
 };
 
+char* get_tracenode_dbg(const char *test) {
+	return symbol_to_module(test);
+}
+
 char* get_tracenode_module(struct Tracenode *node) {
 	if (!node->key)
 		return NULL;
 
 	if (key_type == KEY_SYMBOL)
-		// TODO
-		return NULL;
+		return symbol_to_module(node->symbol);
 	else
 		return kaddr_to_module(node->addr);
 }
@@ -614,7 +665,7 @@ struct json_marker {
 	int count;
 };
 
-static int comp_symbol(const void *x, const void *y) {
+static int comp_symbol_addr(const void *x, const void *y) {
 	struct Symbol *sa = (struct Symbol*)x;
 	struct Symbol *sb = (struct Symbol*)y;
 
@@ -623,6 +674,13 @@ static int comp_symbol(const void *x, const void *y) {
 	else if (sa->addr < sb->addr)
 		return -1;
 	else return 0;
+}
+
+static int comp_symbol_str(const void *x, const void *y) {
+	struct Symbol *sa = (struct Symbol*)x;
+	struct Symbol *sb = (struct Symbol*)y;
+
+	return strcmp(sa->sym_name, sb->sym_name);
 }
 
 void load_kallsyms() {
@@ -700,7 +758,15 @@ void load_kallsyms() {
 		free(symbol_buf_tmp);
 	}
 
-	qsort((void*)symbol_table, symbol_table_len, sizeof(struct Symbol), comp_symbol);
+	// TODO: When ftrace/page_owner is used as backend, key_type is set to KEY_SYMBOL, as
+	// memstrack will store the symbol string instead of address in each trace node.
+	// If we want to support multiple backend (eg. use page_owner as initialing backend
+	// and transfer to perf), need to build two tables for Symbol struct lookup, one sorted
+	// by address (used by page_owner), one sorted by address (used by perf).
+	if (key_type == KEY_SYMBOL)
+		qsort((void*)symbol_table, symbol_table_len, sizeof(struct Symbol), comp_symbol_str);
+	else
+		qsort((void*)symbol_table, symbol_table_len, sizeof(struct Symbol), comp_symbol_addr);
 }
 
 int for_each_tracenode_ret(
