@@ -155,7 +155,7 @@ static int parse_report_fmt_tok(char *fmt_tok,
 	report_arg = strtok_r(NULL, ":", &tmp);
 	parsed_fmt.throttle = report_default_throttle;
 
-	for (int i = 0;; ++i) {
+	for (int i = 0; i < report_table_size; ++i) {
 		if (!strcmp(reporter_table[i].name, report_type)) {
 			parsed_reporter = &reporter_table[i];
 			break;
