@@ -29,6 +29,7 @@
 #include <sys/sysinfo.h>
 #include <linux/perf_event.h>
 #include <sys/syscall.h>
+#include <sys/resource.h>
 
 #include "perf-internal.h"
 #include "perf-events-define.h"
@@ -357,9 +358,27 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.wakeup_watermark = WAKEUP_WATERMARK;
 	attr.watermark = 1;
 
+retry:
 	perf_fd = sys_perf_event_open(&attr, -1, ring->cpu, -1, 0);
 
 	if (perf_fd <= 0) {
+		if (errno == EMFILE) {
+			struct rlimit rl;
+			if (getrlimit(RLIMIT_NOFILE, &rl) != 0) {
+				log_error("Error getting rlimit value: %s\n",
+					strerror(errno));
+				return errno;
+			}
+			rl.rlim_cur <<= 1;
+			rl.rlim_max <<= 1;
+			if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
+				log_error("Error setting rlimit value to be"
+					" rlim_cur(%lu) rlim_max(%lu): %s\n",
+					rl.rlim_cur, rl.rlim_max, strerror(errno));
+				return errno;
+			}
+			goto retry;
+		}
 		log_error("Error calling perf_event_open: %s\n", strerror(errno));
 		return errno;
 	}
