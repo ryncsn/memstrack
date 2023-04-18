@@ -70,14 +70,18 @@ struct perf_event_table_entry {
 	struct PerfEvent *event;
 	SampleHandler handler;
 	int (*is_enabled)(void);
+	bool share_cpu;
 };
 
 extern const struct perf_event_table_entry perf_event_table[];
 
 extern const int perf_event_entry_number;
 
-int perf_events_init(int buf_per_cpu);
-int perf_ring_setup(struct PerfEventRing *ring);
+int perf_events_init(int buf_size, int *cpu_share_event_num,
+		int *cpu_exclusive_event_num);
+int perf_ring_setup(struct PerfEventRing *ring, int pid, int cpu);
+int perf_ring_setup_cpu_share(struct PerfEventRing *ring);
+int perf_ring_setup_cpu_exclusive(struct PerfEventRing *ring);
 int perf_ring_start_sampling(struct PerfEventRing *ring);
 int perf_ring_process(struct PerfEventRing *ring);
 int perf_ring_clean(struct PerfEventRing *ring);

@@ -37,39 +37,53 @@ static void assign_cpu_no(int cpu_no, void *rings) {
 }
 
 int perf_handling_init() {
-	int ret, perf_event_enabled_num;
+	int ret;
 	int cpu_num = perf_get_cpu_num();
 	const struct perf_event_table_entry *entry;
+	int cpu_share_event_num, cpu_exclusive_event_num;
+	struct PerfEventRing *rings;
 
-	ret = perf_events_init(perf_buf_size_per_cpu);
+	ret = perf_events_init(perf_buf_size_per_cpu, &cpu_share_event_num,
+				&cpu_exclusive_event_num);
 	if (ret < 0) {
 		return ret;
 	}
 
-	perf_event_enabled_num = ret;
-	perf_event_ring_num = perf_event_enabled_num * perf_get_cpu_num();
+	perf_event_ring_num = cpu_exclusive_event_num * perf_get_cpu_num()
+				+ cpu_share_event_num;
 	perf_event_rings = (struct PerfEventRing*)calloc(perf_event_ring_num, sizeof(struct PerfEventRing));
 
-	for (int i = 0, j = 0; i < perf_event_entry_number; i++){
-		struct PerfEventRing *rings = perf_event_rings + (j * cpu_num);
+	for (int i = 0, j = 0; i < perf_event_entry_number; i++) {
+		rings = perf_event_rings + j;
 		entry = perf_event_table + i;
 
 		if (!entry->is_enabled() || !entry->event->valid) {
 			continue;
 		}
 
-		for (int cpu = 0; cpu < cpu_num; cpu++) {
-			rings[cpu].event = entry->event;
-			rings[cpu].sample_handler = entry->handler;
+		if (!entry->share_cpu) {
+			for (int cpu = 0; cpu < cpu_num; cpu++) {
+				rings[cpu].event = entry->event;
+				rings[cpu].sample_handler = entry->handler;
+			}
+			for_each_online_cpu(assign_cpu_no, &rings);
+			j += cpu_num;
+		} else {
+			rings->event = entry->event;
+			rings->sample_handler = entry->handler;
+			assign_cpu_no(-1, &rings);
+			j += 1;
 		}
-
-		for_each_online_cpu(assign_cpu_no, &rings);
-
-		j++;
 	}
 
 	for (int i = 0; i < perf_event_ring_num; i++) {
-		ret = perf_ring_setup(perf_event_rings + i);
+		rings = perf_event_rings + i;
+		if (rings->cpu == -1) {
+			ret = perf_ring_setup_cpu_share(rings);
+		} else {
+			ret = perf_ring_setup_cpu_exclusive(rings);
+		}
+
 		if (ret) {
 			return ret;
 		}

@@ -264,23 +264,27 @@ static int perf_handle_process_exec(const unsigned char* header) {
 static int always_enable(void) { return 1; }
 
 const struct perf_event_table_entry perf_event_table[] = {
-	{ &get_perf_event(mm_page_alloc),		perf_handle_mm_page_alloc,		always_enable },
-	{ &get_perf_event(mm_page_free),		perf_handle_mm_page_free,		always_enable },
-	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable },
-//	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable },
-	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable },
-	{ &get_perf_event(sys_exit),			perf_handle_sys_exit_init_module,	always_enable },
-	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,		always_enable },
+	{ &get_perf_event(mm_page_alloc),		perf_handle_mm_page_alloc,		always_enable,	false },
+	{ &get_perf_event(mm_page_free),		perf_handle_mm_page_free,		always_enable,	false },
+	{ &get_perf_event(module_load),			perf_handle_module_load,		always_enable,	true },
+//	{ &get_perf_event(sys_enter_init_module),	perf_handle_module_load,		always_enable,	true },
+	{ &get_perf_event(sys_exit_init_module),	perf_handle_sys_exit_init_module,	always_enable,	true },
+	{ &get_perf_event(sys_exit),			perf_handle_sys_exit_init_module,	always_enable,	true },
+	{ &get_perf_event(sched_process_exec),		perf_handle_process_exec,		always_enable,	false },
 };
 
 const int perf_event_entry_number = sizeof(perf_event_table) / sizeof(struct perf_event_table_entry);
 
-int perf_events_init(int buf_size)
+int perf_events_init(int buf_size, int *cpu_share_event_num,
+		int *cpu_exclusive_event_num)
 {
 	int ret;
-	int perf_event_enabled_num = 0;
 	int buf_total_factor = 0;
-	size_t buf_per_factor, aligned_buf_size = 0;
+	size_t buf_per_factor;
+	size_t aligned_buf_size_cpu_share = 0;
+	size_t aligned_buf_size_cpu_exclusive = 0;
+	*cpu_share_event_num = 0;
+	*cpu_exclusive_event_num = 0;
 
 	for (int i = 0; i < perf_event_entry_number; ++i) {
 		ret = perf_do_load_event_info(perf_event_table[i].event);
@@ -290,7 +294,10 @@ int perf_events_init(int buf_size)
 		if (!perf_event_table[i].is_enabled() || !perf_event_table[i].event->valid)
 			continue;
 
-		perf_event_enabled_num ++;
+		if (perf_event_table[i].share_cpu)
+			(*cpu_share_event_num)++;
+		else
+			(*cpu_exclusive_event_num)++;
 		buf_total_factor += perf_event_table[i].event->buf_factor;
 	}
 
@@ -322,22 +329,41 @@ int perf_events_init(int buf_size)
 		size += page_size;
 
 		perf_event_table[i].event->buf_size = size;
-		aligned_buf_size += size;
 
-		log_debug("%s using %u (%u pages) of buffer per CPU.\n",
+		if (perf_event_table[i].share_cpu) {
+			aligned_buf_size_cpu_share += size;
+		} else {
+			aligned_buf_size_cpu_exclusive += size;
+		}
+
+		log_debug("%s using %u (%u pages) of buffer%s.\n",
 				perf_event_table[i].event->name,
 				perf_event_table[i].event->buf_size,
-				perf_event_table[i].event->buf_size / page_size);
+				perf_event_table[i].event->buf_size / page_size,
+				perf_event_table[i].share_cpu ? "" : " per CPU");
 	}
 
-	log_debug("Perf buffer size aligned to %ld (%lxMB) per CPU.\n", aligned_buf_size, aligned_buf_size >> 20);
+	log_debug("Perf buffer size aligned to %ld (%lxMB) per CPU,"
+		" and %ld (%lxMB) of shared CPU\n",
+		aligned_buf_size_cpu_exclusive, aligned_buf_size_cpu_exclusive >> 20,
+		aligned_buf_size_cpu_share, aligned_buf_size_cpu_share >> 20);
 
 	trampo_page = malloc(page_size);
 
-	return perf_event_enabled_num;
+	return 0;
 }
 
-int perf_ring_setup(struct PerfEventRing *ring) {
+int perf_ring_setup_cpu_share(struct PerfEventRing *ring)
+{
+	return perf_ring_setup(ring, 0, -1);
+}
+
+int perf_ring_setup_cpu_exclusive(struct PerfEventRing *ring)
+{
+	return perf_ring_setup(ring, -1, ring->cpu);
+}
+
+int perf_ring_setup(struct PerfEventRing *ring, int pid, int cpu) {
 	struct perf_event_attr attr;
 	int perf_fd = 0;
 
@@ -357,7 +383,7 @@ int perf_ring_setup(struct PerfEventRing *ring) {
 	attr.wakeup_watermark = WAKEUP_WATERMARK;
 	attr.watermark = 1;
 
-	perf_fd = sys_perf_event_open(&attr, -1, ring->cpu, -1, 0);
+	perf_fd = sys_perf_event_open(&attr, pid, cpu, -1, 0);
 
 	if (perf_fd <= 0) {
 		log_error("Error calling perf_event_open: %s\n", strerror(errno));
