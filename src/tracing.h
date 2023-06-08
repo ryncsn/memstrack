@@ -78,14 +78,6 @@ struct PageRecord {
 	struct Tracenode *tracenode;
 };
 
-struct AllocRecord {
-	struct TreeNode node;
-	struct Tracenode *tracenode;
-
-	unsigned long long addr;
-	unsigned long size;
-};
-
 struct AllocEvent {
 	unsigned long kvaddr;
 	long bytes_req;
