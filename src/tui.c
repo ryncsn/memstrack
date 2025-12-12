@@ -552,6 +552,26 @@ void tui_loop(void) {
 					tui_info.line_offset++;
 				}
 				break;
+
+			case KEY_PPAGE:  /* Page Up */
+				tui_info.line_offset -= tui_info.line_num;
+				if (tui_info.line_offset < 0)
+					tui_info.line_offset = 0;
+				tui_info.highlight_line = 0;
+				break;
+
+			case KEY_NPAGE:  /* Page Down */
+				tui_info.line_offset += tui_info.line_num;
+				if (tui_info.line_offset > tracenode_view_num - tui_info.line_num)
+					tui_info.line_offset = tracenode_view_num - tui_info.line_num;
+				if (tui_info.line_offset < 0)
+					tui_info.line_offset = 0;
+				tui_info.highlight_line = tui_info.line_num - 1;
+				if (tui_info.highlight_line >= tracenode_view_num - tui_info.line_offset)
+					tui_info.highlight_line = tracenode_view_num - tui_info.line_offset - 1;
+				if (tui_info.highlight_line < 0)
+					tui_info.highlight_line = 0;
+				break;
 		}
 
 		update_ui();
