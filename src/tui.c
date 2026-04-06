@@ -471,7 +471,9 @@ static void update_ui(void) {
 		return;
 	}
 
-	mvprintw(0, 0,  "'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': pause UI\n");
+	mvprintw(0, 0,  "%s'q': quit, 'r': reload symbols, 'm': switch processes/modules, 'p': %s\n",
+			tui_info.paused ? "[PAUSED] " : "",
+			tui_info.paused ? "resume" : "pause UI");
 	mvprintw(1, 0, "Pages being tracked: %lu (%luMB)\n",
 			(page_alloc_counter - page_free_counter),
 			(page_alloc_counter - page_free_counter) * page_size / SIZE_MB);
@@ -509,6 +511,8 @@ void tui_loop(void) {
 
 			case 'm':
 			case 'M':
+				if (tui_info.paused)
+					break;
 				ui_type++;
 				if (ui_type >= UI_TYPE_MAX)
 					ui_type = 0;
@@ -522,6 +526,8 @@ void tui_loop(void) {
 				break;
 
 			case ' ':
+				if (tui_info.paused)
+					break;
 				toggle_tracenode_view(tracenode_views + tui_info.highlight_line + tui_info.line_offset);
 				sync_tracenode_views();
 				break;
@@ -580,7 +586,7 @@ void tui_loop(void) {
 	if (ui_fds[1].revents & POLLIN) {
 		uint64_t time;
 		ret = read(ui_fds[1].fd, &time, sizeof(time));
-		if (ret) {
+		if (ret && !tui_info.paused) {
 			update_top_tracenodes();
 			sync_tracenode_views();
 			update_ui();
